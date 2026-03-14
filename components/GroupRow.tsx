@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { useSortable } from '@dnd-kit/sortable'
+import { useSortable, useDraggable } from '@dnd-kit/sortable'
 import { useDroppable } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
 import { Track, useProjectStore } from '@/store/projectStore'
@@ -17,8 +17,6 @@ interface Props {
 export default function GroupRow({ group, children, barWidth, headerW }: Props) {
   const { selectTrack, selectedTrackId, removeTrack, toggleCollapse, updateTrack, tracks } = useProjectStore()
   const isSelected = selectedTrackId === group.id
-
-  // Sub-groups: children that are themselves groups
   const directChildren = children.filter(c => c.groupId === group.id)
 
   const {
@@ -29,8 +27,14 @@ export default function GroupRow({ group, children, barWidth, headerW }: Props) 
     data: { kind: 'track-row', trackId: group.id },
   })
 
-  // Drop zone to accept dragged tracks into this group
+  // The entire group row is now the drop zone — much easier to hit
   const { setNodeRef: setDropRef, isOver } = useDroppable({ id: `group-drop-${group.id}` })
+
+  // Merge both refs onto the outer wrapper
+  function mergeRefs(el: HTMLDivElement | null) {
+    setSortableRef(el)
+    setDropRef(el)
+  }
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -39,33 +43,37 @@ export default function GroupRow({ group, children, barWidth, headerW }: Props) 
   }
 
   return (
-    <div ref={setSortableRef} style={style}>
-      {/* Group header row */}
+    <div ref={mergeRefs} style={style}>
+      {/* Group header — full row is the drop target */}
       <div
-        className={`flex h-10 border-b border-[#3a3a3a] transition-colors ${
-          isSelected ? 'bg-[#2a1f3a]' : isOver ? 'bg-[#2a1f3a]/60' : 'bg-[#221a2e] hover:bg-[#271e36]'
+        className={`flex border-b border-[#3a3a3a] transition-colors min-h-[44px] ${
+          isOver
+            ? 'bg-[#3a1f5a] ring-2 ring-inset ring-[#a855f7]'
+            : isSelected
+            ? 'bg-[#2a1f3a]'
+            : 'bg-[#221a2e] hover:bg-[#271e36]'
         }`}
         onClick={() => selectTrack(group.id)}
       >
         <div
-          className="shrink-0 flex items-center gap-1 px-2 border-r border-[#3a3a3a]"
+          className="shrink-0 flex items-center gap-1.5 px-2 border-r border-[#3a3a3a]"
           style={{ width: headerW, borderLeft: `3px solid ${group.color}` }}
         >
           <div
             {...attributes} {...listeners}
-            className="text-gray-600 hover:text-gray-300 cursor-grab active:cursor-grabbing px-0.5 shrink-0 select-none"
+            className="text-gray-600 hover:text-gray-300 cursor-grab active:cursor-grabbing p-2 -ml-1 shrink-0 select-none touch-none"
           >
-            ⠟
+            ⠿
           </div>
           <button
             onClick={(e) => { e.stopPropagation(); toggleCollapse(group.id) }}
-            className="text-[#a855f7] hover:text-white text-xs w-4 shrink-0 text-center"
+            className="text-[#a855f7] hover:text-white text-sm w-5 shrink-0 text-center touch-manipulation"
             title={group.collapsed ? 'Expand' : 'Collapse'}
           >
             {group.collapsed ? '▶' : '▼'}
           </button>
           <input
-            className="flex-1 bg-transparent text-xs font-bold text-[#a855f7] outline-none truncate"
+            className="flex-1 bg-transparent text-xs font-bold text-[#a855f7] outline-none truncate min-w-0"
             value={group.name}
             onChange={(e) => updateTrack(group.id, { name: e.target.value })}
             onClick={(e) => e.stopPropagation()}
@@ -73,25 +81,29 @@ export default function GroupRow({ group, children, barWidth, headerW }: Props) 
           <span className="text-[10px] text-gray-500 shrink-0">{directChildren.length}t</span>
           <button
             onClick={(e) => { e.stopPropagation(); removeTrack(group.id) }}
-            className="text-gray-600 hover:text-red-400 text-xs px-0.5 shrink-0"
+            className="text-gray-600 hover:text-red-400 p-2 shrink-0 touch-manipulation"
           >×</button>
         </div>
 
-        {/* Group bus lane */}
-        <div className="flex-1 relative bg-[#a855f7]/5">
-          <div className="absolute inset-0 border-b border-[#a855f7]/20" />
-          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-[#a855f7]/50 font-bold uppercase tracking-widest">
-            GROUP · BUS
-          </span>
+        {/* Group bus lane — also part of the drop zone */}
+        <div className="flex-1 relative bg-[#a855f7]/5 flex items-center">
+          {isOver ? (
+            <span className="absolute inset-0 flex items-center justify-center text-[11px] text-[#a855f7] font-semibold animate-fade-in">
+              ＋ Drop into group
+            </span>
+          ) : (
+            <span className="absolute left-2 text-[10px] text-[#a855f7]/40 font-bold uppercase tracking-widest">
+              GROUP · BUS
+            </span>
+          )}
         </div>
       </div>
 
-      {/* Children — indented, hidden when collapsed */}
+      {/* Children */}
       {!group.collapsed && (
         <>
           {directChildren.map((child) =>
             child.type === 'group' ? (
-              // Nested sub-group — recursive!
               <div key={child.id} style={{ paddingLeft: 16 }}>
                 <GroupRow
                   group={child}
@@ -110,16 +122,6 @@ export default function GroupRow({ group, children, barWidth, headerW }: Props) 
               />
             )
           )}
-
-          {/* Drop zone */}
-          <div
-            ref={setDropRef}
-            className={`h-6 flex items-center border-b border-[#3a3a3a]/50 pl-10 transition-colors ${
-              isOver ? 'bg-[#2a1f3a]/60' : 'bg-[#1e1628]'
-            }`}
-          >
-            <span className="text-[10px] text-[#a855f7]/40 italic">drop track here to add to group</span>
-          </div>
         </>
       )}
     </div>

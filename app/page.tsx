@@ -15,7 +15,7 @@ import { useProjectStore, TrackType } from '@/store/projectStore'
 import { useKeyboard } from '@/hooks/useKeyboard'
 
 export default function Home() {
-  const { addTrack, reorderTracks, tracks, moveClip } = useProjectStore()
+  const { addTrack, reorderTracks, tracks, moveClip, setGroupId } = useProjectStore()
   const [activeId, setActiveId] = useState<string | null>(null)
   const [activeKind, setActiveKind] = useState<string | null>(null)
   const [inspectorOpen, setInspectorOpen] = useState(true)
@@ -25,7 +25,6 @@ export default function Home() {
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    // Touch: 400ms hold before drag starts, 8px tolerance so micro-jitter doesn't cancel
     useSensor(TouchSensor, { activationConstraint: { delay: 400, tolerance: 8 } })
   )
 
@@ -41,25 +40,40 @@ export default function Home() {
     if (!over) return
 
     const kind = active.data.current?.kind
+    const overId = String(over.id)
 
-    if (kind === 'browser-item' && (over.id === 'timeline' || String(over.id).startsWith('track-'))) {
+    // Browser item dropped onto timeline or track → add track
+    if (kind === 'browser-item' && (overId === 'timeline' || overId.startsWith('track-'))) {
       addTrack(active.data.current?.type as TrackType)
       return
     }
 
+    // Track row dropped onto a group header → assign to group
+    if (kind === 'track-row' && overId.startsWith('group-drop-')) {
+      const groupId = overId.replace('group-drop-', '')
+      const trackId = active.data.current?.trackId
+      // Don't allow a group to be dropped into itself
+      if (trackId && trackId !== groupId) {
+        setGroupId(trackId, groupId)
+      }
+      return
+    }
+
+    // Track row reorder
     if (kind === 'track-row') {
       const fromIndex = tracks.findIndex(t => `track-${t.id}` === String(active.id))
-      const toIndex = tracks.findIndex(t => `track-${t.id}` === String(over.id))
+      const toIndex = tracks.findIndex(t => `track-${t.id}` === overId)
       if (fromIndex !== -1 && toIndex !== -1 && fromIndex !== toIndex) {
         reorderTracks(fromIndex, toIndex)
       }
       return
     }
 
+    // Clip dropped onto a different track's clip zone → move clip
     if (kind === 'clip') {
       const fromTrackId = active.data.current?.trackId
       const clipId = active.data.current?.clipId
-      const toTrackId = String(over.id).replace('track-clips-', '')
+      const toTrackId = overId.replace('track-clips-', '')
       if (fromTrackId && clipId && toTrackId && fromTrackId !== toTrackId) {
         moveClip(fromTrackId, toTrackId, clipId)
       }
@@ -97,8 +111,8 @@ export default function Home() {
           </div>
         )}
         {activeId && activeKind === 'track-row' && (
-          <div className="h-12 w-64 bg-[#252535] border border-[#555] rounded text-xs text-white shadow-xl opacity-80 flex items-center px-3">
-            Moving track...
+          <div className="h-12 w-64 bg-[#252535] border border-[#a855f7]/40 rounded text-xs text-white shadow-xl opacity-80 flex items-center px-3 gap-2">
+            <span className="text-[#a855f7]">⠿</span> Moving track…
           </div>
         )}
         {activeId && activeKind === 'clip' && (
