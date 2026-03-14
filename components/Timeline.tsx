@@ -15,9 +15,8 @@ export default function Timeline() {
   const { setNodeRef: setDropRef, isOver } = useDroppable({ id: 'timeline' })
   const { tracks, bars } = useProjectStore()
 
-  // Shared scroll state: ruler and body scroll together
   const rulerRef = useRef<HTMLDivElement>(null)
-  const bodyRef = useRef<HTMLDivElement>(null)
+  const bodyRef = useRef<HTMLDivElement | null>(null)
   const syncingRef = useRef(false)
 
   const onBodyScroll = useCallback(() => {
@@ -34,6 +33,12 @@ export default function Timeline() {
     syncingRef.current = false
   }, [])
 
+  // Callback ref: assigns both the droppable ref and our bodyRef
+  const setBodyRef = useCallback((el: HTMLDivElement | null) => {
+    setDropRef(el)
+    bodyRef.current = el
+  }, [setDropRef])
+
   const totalW = bars * BAR_WIDTH
   const topLevel = tracks.filter(t => t.groupId === null)
 
@@ -41,11 +46,9 @@ export default function Timeline() {
     <div className="flex-1 flex flex-col overflow-hidden bg-[#1a1a1a] min-h-0">
       <SectionRuler barWidth={BAR_WIDTH} headerW={HEADER_W} bars={bars} bodyRef={bodyRef} />
 
-      {/* Bar number ruler — scrolls in sync with body */}
+      {/* Bar number ruler */}
       <div className="flex shrink-0 h-6 bg-[#242424] border-b border-[#3a3a3a] overflow-hidden">
-        {/* Fixed header spacer */}
         <div className="shrink-0 bg-[#242424] border-r border-[#3a3a3a]" style={{ width: HEADER_W }} />
-        {/* Scrollable ruler numbers */}
         <div
           ref={rulerRef}
           className="flex-1 overflow-hidden"
@@ -67,10 +70,7 @@ export default function Timeline() {
 
       {/* Track body */}
       <div
-        ref={(el) => {
-          setDropRef(el)
-          bodyRef.current = el
-        }}
+        ref={setBodyRef}
         className={`flex-1 overflow-auto transition-colors min-h-0 ${ isOver ? 'bg-[#1c2a1c]' : '' }`}
         onScroll={onBodyScroll}
       >
