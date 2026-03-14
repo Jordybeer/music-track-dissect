@@ -307,6 +307,3 @@ export const useProjectStore = create<ProjectState>()(
     { name: 'track-dissect-project' }
   )
 )
-
-export const useTemporalStore = (selector: (state: ReturnType<typeof useProjectStore.temporal.getState>) => unknown) =>
-  useProjectStore.temporal(selector as never)
