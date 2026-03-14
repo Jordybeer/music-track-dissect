@@ -25,7 +25,8 @@ export default function Home() {
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 5 } })
+    // Touch: 400ms hold before drag starts, 8px tolerance so micro-jitter doesn't cancel
+    useSensor(TouchSensor, { activationConstraint: { delay: 400, tolerance: 8 } })
   )
 
   function handleDragStart(event: DragStartEvent) {
@@ -99,6 +100,9 @@ export default function Home() {
           <div className="h-12 w-64 bg-[#252535] border border-[#555] rounded text-xs text-white shadow-xl opacity-80 flex items-center px-3">
             Moving track...
           </div>
+        )}
+        {activeId && activeKind === 'clip' && (
+          <div className="h-10 w-24 rounded opacity-80 bg-[#3a3a3a] border border-[#555] shadow-xl" />
         )}
       </DragOverlay>
     </DndContext>
