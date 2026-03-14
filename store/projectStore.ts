@@ -5,6 +5,12 @@ import { persist } from 'zustand/middleware'
 
 export type TrackType = 'audio' | 'midi' | 'drum' | 'group' | 'return'
 
+export interface StepNote {
+  active: boolean
+  note: string      // e.g. "C3", "Eb4"
+  velocity: number  // 0-127
+}
+
 export interface Clip {
   id: string
   label: string
@@ -12,6 +18,9 @@ export interface Clip {
   lengthBars: number
   color: string
   notes: string
+  // 16-step pattern (only used on midi/drum clips)
+  steps: StepNote[]
+  stepRows: number   // how many pitch rows (1 = mono/drum hit, up to 8 for chords)
 }
 
 export interface FXDevice {
@@ -32,9 +41,8 @@ export interface Track {
   key: string
   scale: string
   notes: string
-  // Group/bus fields
-  groupId: string | null   // which group this track belongs to (null = top level)
-  collapsed: boolean       // only meaningful for group tracks
+  groupId: string | null
+  collapsed: boolean
 }
 
 export interface SectionMarker {
@@ -65,6 +73,7 @@ export interface ProjectState {
   removeClip: (trackId: string, clipId: string) => void
   updateClip: (trackId: string, clipId: string, patch: Partial<Clip>) => void
   moveClip: (fromTrackId: string, toTrackId: string, clipId: string) => void
+  updateStep: (trackId: string, clipId: string, stepIndex: number, patch: Partial<StepNote>) => void
   addFX: (trackId: string, device: FXDevice) => void
   removeFX: (trackId: string, deviceId: string) => void
   reorderFX: (trackId: string, from: number, to: number) => void
@@ -81,6 +90,10 @@ const trackColors: Record<TrackType, string> = {
   drum: '#ef4444',
   group: '#a855f7',
   return: '#f59e0b',
+}
+
+export function makeSteps(count = 16): StepNote[] {
+  return Array.from({ length: count }, () => ({ active: false, note: 'C3', velocity: 100 }))
 }
 
 export function uid() {
@@ -119,7 +132,6 @@ export const useProjectStore = create<ProjectState>()(
       })),
 
       removeTrack: (id) => set((s) => ({
-        // Also ungroup any children
         tracks: s.tracks
           .filter(t => t.id !== id)
           .map(t => t.groupId === id ? { ...t, groupId: null } : t),
@@ -178,6 +190,21 @@ export const useProjectStore = create<ProjectState>()(
         }
       }),
 
+      updateStep: (trackId, clipId, stepIndex, patch) => set((s) => ({
+        tracks: s.tracks.map(t => {
+          if (t.id !== trackId) return t
+          return {
+            ...t,
+            clips: t.clips.map(c => {
+              if (c.id !== clipId) return c
+              const steps = [...c.steps]
+              steps[stepIndex] = { ...steps[stepIndex], ...patch }
+              return { ...c, steps }
+            })
+          }
+        })
+      })),
+
       addFX: (trackId, device) => set((s) => ({
         tracks: s.tracks.map(t => t.id === trackId ? { ...t, fx: [...t.fx, device] } : t)
       })),
@@ -216,7 +243,12 @@ export const useProjectStore = create<ProjectState>()(
           set({
             bpm: data.bpm ?? 128,
             bars: data.bars ?? 32,
-            tracks: (data.tracks ?? []).map((t: Track) => ({ groupId: null, collapsed: false, ...t })),
+            tracks: (data.tracks ?? []).map((t: Track) => ({
+              groupId: null, collapsed: false, ...t,
+              clips: (t.clips ?? []).map((c: Clip) => ({
+                steps: makeSteps(), stepRows: 1, ...c
+              }))
+            })),
             markers: data.markers ?? [],
             selectedTrackId: null,
             selectedClipId: null,
