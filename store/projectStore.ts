@@ -190,7 +190,7 @@ export const useProjectStore = create<ProjectState>()(
             ...clip,
             id: uid(),
             startBar: clip.startBar + clip.lengthBars,
-            steps: clip.steps.map(s => ({ ...s })),
+            steps: clip.steps.map(step => ({ ...step })),
           }
           return {
             tracks: s.tracks.map(t => t.id === trackId
@@ -275,12 +275,19 @@ export const useProjectStore = create<ProjectState>()(
             set({
               bpm: data.bpm ?? 128,
               bars: data.bars ?? 32,
-              tracks: (data.tracks ?? []).map((t: Track) => ({
-                groupId: null, collapsed: false, ...t,
-                clips: (t.clips ?? []).map((c: Clip) => ({
-                  steps: makeSteps(), stepRows: 1, ...c
-                }))
-              })),
+              tracks: (data.tracks ?? []).map((t: Track) => {
+                const track: Track = {
+                  ...t,
+                  groupId: t.groupId ?? null,
+                  collapsed: t.collapsed ?? false,
+                  clips: (t.clips ?? []).map((c: Clip) => ({
+                    ...c,
+                    steps: c.steps?.length === 16 ? c.steps : makeSteps(),
+                    stepRows: c.stepRows ?? 1,
+                  })),
+                }
+                return track
+              }),
               markers: data.markers ?? [],
               selectedTrackId: null,
               selectedClipId: null,
@@ -290,11 +297,9 @@ export const useProjectStore = create<ProjectState>()(
           }
         },
       }),
-      // zundo options — don't record selection changes in undo history
       {
         partialize: (state) => {
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          const { selectedTrackId, selectedClipId, ...rest } = state
+          const { selectedTrackId: _a, selectedClipId: _b, ...rest } = state
           return rest
         },
       }
@@ -303,6 +308,5 @@ export const useProjectStore = create<ProjectState>()(
   )
 )
 
-// Temporal store accessor
 export const useTemporalStore = (selector: (state: ReturnType<typeof useProjectStore.temporal.getState>) => unknown) =>
   useProjectStore.temporal(selector as never)
