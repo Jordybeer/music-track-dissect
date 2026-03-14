@@ -10,17 +10,17 @@ interface Props {
   track: Track
   barWidth: number
   headerW: number
+  indent?: number
 }
 
-export default function TrackRow({ track, barWidth, headerW }: Props) {
-  const { selectTrack, selectedTrackId, removeTrack, addClip } = useProjectStore()
+export default function TrackRow({ track, barWidth, headerW, indent = 0 }: Props) {
+  const { selectTrack, selectedTrackId, removeTrack, addClip, setGroupId } = useProjectStore()
   const isSelected = selectedTrackId === track.id
   const [isAdding, setIsAdding] = useState(false)
   const [clipBar, setClipBar] = useState(1)
   const [clipLen, setClipLen] = useState(4)
   const [clipLabel, setClipLabel] = useState('')
 
-  // Sortable for track row reordering
   const {
     attributes,
     listeners,
@@ -33,7 +33,6 @@ export default function TrackRow({ track, barWidth, headerW }: Props) {
     data: { kind: 'track-row', trackId: track.id },
   })
 
-  // Droppable clip zone
   const { setNodeRef: setDropRef, isOver } = useDroppable({
     id: `track-clips-${track.id}`,
   })
@@ -57,6 +56,11 @@ export default function TrackRow({ track, barWidth, headerW }: Props) {
     opacity: isDragging ? 0.4 : 1,
   }
 
+  const indentStyle = indent > 0 ? {
+    borderLeft: `${indent}px solid #a855f7`,
+    paddingLeft: 0,
+  } : {}
+
   return (
     <div
       ref={setSortableRef}
@@ -65,22 +69,32 @@ export default function TrackRow({ track, barWidth, headerW }: Props) {
         isSelected ? 'bg-[#252535]' : isOver ? 'bg-[#1c2a1c]' : 'hover:bg-[#1e1e1e]'
       } transition-colors`}
     >
-      {/* Drag handle + header */}
+      {/* Track header */}
       <div
         className="shrink-0 flex items-center gap-1 px-2 border-r border-[#3a3a3a] cursor-pointer"
-        style={{ width: headerW, borderLeft: `3px solid ${track.color}` }}
+        style={{ width: headerW, borderLeft: `3px solid ${track.color}`, ...indentStyle }}
         onClick={() => selectTrack(track.id)}
       >
-        {/* Drag handle */}
         <div
           {...attributes}
           {...listeners}
           className="text-gray-600 hover:text-gray-300 cursor-grab active:cursor-grabbing px-0.5 shrink-0 select-none"
-          title="Drag to reorder"
         >
-          ⠿
+          ⠟
         </div>
         <span className="text-xs font-medium truncate flex-1">{track.name}</span>
+
+        {/* Ungroup button if inside a group */}
+        {track.groupId && (
+          <button
+            onClick={(e) => { e.stopPropagation(); setGroupId(track.id, null) }}
+            className="text-[#a855f7] hover:text-white text-[10px] px-0.5 shrink-0"
+            title="Remove from group"
+          >
+            ↑
+          </button>
+        )}
+
         <button
           onClick={(e) => { e.stopPropagation(); setIsAdding(!isAdding) }}
           className="text-gray-500 hover:text-white text-xs px-0.5 shrink-0"
@@ -91,17 +105,13 @@ export default function TrackRow({ track, barWidth, headerW }: Props) {
         <button
           onClick={(e) => { e.stopPropagation(); removeTrack(track.id) }}
           className="text-gray-600 hover:text-red-400 text-xs px-0.5 shrink-0"
-          title="Remove"
         >
           ×
         </button>
       </div>
 
-      {/* Clip drop zone */}
-      <div
-        ref={setDropRef}
-        className="flex-1 relative"
-      >
+      {/* Clip zone */}
+      <div ref={setDropRef} className="flex-1 relative">
         {track.clips.map((clip) => (
           <div
             key={clip.id}
@@ -111,7 +121,6 @@ export default function TrackRow({ track, barWidth, headerW }: Props) {
               width: clip.lengthBars * barWidth - 2,
               background: clip.color + 'cc',
               border: `1px solid ${clip.color}`,
-              cursor: 'default',
             }}
             title={clip.notes || clip.label}
             onClick={(e) => { e.stopPropagation(); selectTrack(track.id) }}
@@ -121,7 +130,7 @@ export default function TrackRow({ track, barWidth, headerW }: Props) {
         ))}
       </div>
 
-      {/* Add clip popover — fixed position relative to viewport */}
+      {/* Add clip popover */}
       {isAdding && (
         <div
           className="fixed z-50 bg-[#2a2a2a] border border-[#3a3a3a] rounded p-3 flex gap-2 items-center shadow-2xl"
@@ -148,18 +157,10 @@ export default function TrackRow({ track, barWidth, headerW }: Props) {
             onChange={(e) => setClipLen(Number(e.target.value))}
             className="w-12 bg-[#1a1a1a] border border-[#3a3a3a] rounded px-1 py-1 text-xs text-white text-center"
           />
-          <button
-            onClick={handleAddClip}
-            className="bg-[#e8a020] text-black text-xs font-bold px-2 py-1 rounded hover:bg-yellow-400"
-          >
+          <button onClick={handleAddClip} className="bg-[#e8a020] text-black text-xs font-bold px-2 py-1 rounded hover:bg-yellow-400">
             Add
           </button>
-          <button
-            onClick={() => setIsAdding(false)}
-            className="text-gray-400 hover:text-white text-xs"
-          >
-            ✕
-          </button>
+          <button onClick={() => setIsAdding(false)} className="text-gray-400 hover:text-white text-xs">✕</button>
         </div>
       )}
     </div>

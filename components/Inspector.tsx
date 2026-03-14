@@ -16,8 +16,9 @@ function uid() {
 }
 
 export default function Inspector() {
-  const { tracks, selectedTrackId, updateTrack, addFX, removeFX } = useProjectStore()
+  const { tracks, selectedTrackId, updateTrack, addFX, removeFX, setGroupId } = useProjectStore()
   const track = tracks.find(t => t.id === selectedTrackId)
+  const groups = tracks.filter(t => t.type === 'group')
 
   if (!track) {
     return (
@@ -27,8 +28,12 @@ export default function Inspector() {
     )
   }
 
+  const isGroup = track.type === 'group'
+  const children = isGroup ? tracks.filter(t => t.groupId === track.id) : []
+
   return (
     <div className="w-52 shrink-0 bg-[#242424] border-l border-[#3a3a3a] flex flex-col overflow-y-auto">
+      {/* Header */}
       <div className="px-3 py-2 border-b border-[#3a3a3a] flex items-center gap-2">
         <div className="w-2 h-2 rounded-full" style={{ background: track.color }} />
         <input
@@ -40,6 +45,50 @@ export default function Inspector() {
       </div>
 
       <div className="p-3 space-y-3">
+
+        {/* Group: show children list */}
+        {isGroup && (
+          <div>
+            <label className="text-xs text-gray-400 block mb-1">Children ({children.length})</label>
+            <div className="space-y-1">
+              {children.length === 0 && (
+                <p className="text-xs text-gray-600 italic">No tracks assigned yet</p>
+              )}
+              {children.map(c => (
+                <div key={c.id} className="flex items-center gap-1 text-xs">
+                  <div className="w-2 h-2 rounded-full shrink-0" style={{ background: c.color }} />
+                  <span className="flex-1 truncate text-gray-300">{c.name}</span>
+                  <button
+                    onClick={() => setGroupId(c.id, null)}
+                    className="text-gray-500 hover:text-red-400 text-[10px]"
+                    title="Remove from group"
+                  >
+                    ↑
+                  </button>
+                </div>
+              ))}
+            </div>
+            <p className="text-[10px] text-gray-600 mt-2 italic">Assign tracks via inspector below ↓</p>
+          </div>
+        )}
+
+        {/* Non-group: assign to a group */}
+        {!isGroup && groups.length > 0 && (
+          <div>
+            <label className="text-xs text-gray-400 block mb-1">Assign to Group</label>
+            <select
+              className="w-full bg-[#1a1a1a] border border-[#3a3a3a] rounded px-1 py-1 text-xs text-white"
+              value={track.groupId ?? ''}
+              onChange={(e) => setGroupId(track.id, e.target.value || null)}
+            >
+              <option value="">— None —</option>
+              {groups.map(g => (
+                <option key={g.id} value={g.id}>{g.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
         {/* Role */}
         <div>
           <label className="text-xs text-gray-400 block mb-1">Layer Role</label>
@@ -83,7 +132,7 @@ export default function Inspector() {
           <textarea
             className="w-full bg-[#1a1a1a] border border-[#3a3a3a] rounded px-2 py-1 text-xs text-white resize-none"
             rows={3}
-            placeholder="What did you hear? Observations..."
+            placeholder="Observations, sound description..."
             value={track.notes}
             onChange={(e) => updateTrack(track.id, { notes: e.target.value })}
           />
@@ -99,14 +148,10 @@ export default function Inspector() {
                 <button
                   key={s}
                   onClick={() => updateTrack(track.id, {
-                    sends: active
-                      ? track.sends.filter(x => x !== s)
-                      : [...track.sends, s]
+                    sends: active ? track.sends.filter(x => x !== s) : [...track.sends, s]
                   })}
                   className={`px-2 py-0.5 text-xs rounded border transition-colors ${
-                    active
-                      ? 'bg-[#f59e0b] text-black border-[#f59e0b]'
-                      : 'bg-transparent text-gray-400 border-[#3a3a3a] hover:border-[#555]'
+                    active ? 'bg-[#f59e0b] text-black border-[#f59e0b]' : 'bg-transparent text-gray-400 border-[#3a3a3a] hover:border-[#555]'
                   }`}
                 >
                   {s}
@@ -121,18 +166,10 @@ export default function Inspector() {
           <label className="text-xs text-gray-400 block mb-2">FX Chain</label>
           <div className="space-y-1">
             {track.fx.map((device, i) => (
-              <div
-                key={device.id}
-                className="flex items-center gap-1 bg-[#1a1a1a] border border-[#3a3a3a] rounded px-2 py-1"
-              >
-                <span className="text-xs text-gray-300 mr-1 text-gray-500">{i + 1}</span>
+              <div key={device.id} className="flex items-center gap-1 bg-[#1a1a1a] border border-[#3a3a3a] rounded px-2 py-1">
+                <span className="text-[10px] text-gray-600 mr-1">{i + 1}</span>
                 <span className="text-xs flex-1 truncate">{device.name}</span>
-                <button
-                  onClick={() => removeFX(track.id, device.id)}
-                  className="text-gray-600 hover:text-red-400 text-xs"
-                >
-                  ×
-                </button>
+                <button onClick={() => removeFX(track.id, device.id)} className="text-gray-600 hover:text-red-400 text-xs">×</button>
               </div>
             ))}
           </div>
@@ -140,9 +177,7 @@ export default function Inspector() {
             className="w-full mt-1 bg-[#1a1a1a] border border-[#3a3a3a] rounded px-1 py-1 text-xs text-white"
             value=""
             onChange={(e) => {
-              if (e.target.value) {
-                addFX(track.id, { id: uid(), name: e.target.value, params: {} })
-              }
+              if (e.target.value) addFX(track.id, { id: uid(), name: e.target.value, params: {} })
             }}
           >
             <option value="">+ Add FX device</option>

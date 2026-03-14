@@ -32,6 +32,9 @@ export interface Track {
   key: string
   scale: string
   notes: string
+  // Group/bus fields
+  groupId: string | null   // which group this track belongs to (null = top level)
+  collapsed: boolean       // only meaningful for group tracks
 }
 
 export interface SectionMarker {
@@ -50,12 +53,14 @@ export interface ProjectState {
   selectedClipId: string | null
   setBpm: (bpm: number) => void
   setBars: (bars: number) => void
-  addTrack: (type: TrackType) => void
+  addTrack: (type: TrackType, groupId?: string | null) => void
   removeTrack: (id: string) => void
   reorderTracks: (from: number, to: number) => void
   selectTrack: (id: string | null) => void
   selectClip: (id: string | null) => void
   updateTrack: (id: string, patch: Partial<Track>) => void
+  setGroupId: (trackId: string, groupId: string | null) => void
+  toggleCollapse: (groupId: string) => void
   addClip: (trackId: string, clip: Clip) => void
   removeClip: (trackId: string, clipId: string) => void
   updateClip: (trackId: string, clipId: string, patch: Partial<Clip>) => void
@@ -95,7 +100,7 @@ export const useProjectStore = create<ProjectState>()(
       setBpm: (bpm) => set({ bpm }),
       setBars: (bars) => set({ bars }),
 
-      addTrack: (type) => set((s) => ({
+      addTrack: (type, groupId = null) => set((s) => ({
         tracks: [...s.tracks, {
           id: uid(),
           name: `${type.charAt(0).toUpperCase() + type.slice(1)} ${s.tracks.filter(t => t.type === type).length + 1}`,
@@ -108,11 +113,16 @@ export const useProjectStore = create<ProjectState>()(
           key: '',
           scale: '',
           notes: '',
+          groupId: groupId ?? null,
+          collapsed: false,
         }]
       })),
 
       removeTrack: (id) => set((s) => ({
-        tracks: s.tracks.filter(t => t.id !== id),
+        // Also ungroup any children
+        tracks: s.tracks
+          .filter(t => t.id !== id)
+          .map(t => t.groupId === id ? { ...t, groupId: null } : t),
         selectedTrackId: s.selectedTrackId === id ? null : s.selectedTrackId,
       })),
 
@@ -128,6 +138,14 @@ export const useProjectStore = create<ProjectState>()(
 
       updateTrack: (id, patch) => set((s) => ({
         tracks: s.tracks.map(t => t.id === id ? { ...t, ...patch } : t)
+      })),
+
+      setGroupId: (trackId, groupId) => set((s) => ({
+        tracks: s.tracks.map(t => t.id === trackId ? { ...t, groupId } : t)
+      })),
+
+      toggleCollapse: (groupId) => set((s) => ({
+        tracks: s.tracks.map(t => t.id === groupId ? { ...t, collapsed: !t.collapsed } : t)
       })),
 
       addClip: (trackId, clip) => set((s) => ({
@@ -149,8 +167,7 @@ export const useProjectStore = create<ProjectState>()(
       })),
 
       moveClip: (fromTrackId, toTrackId, clipId) => set((s) => {
-        const fromTrack = s.tracks.find(t => t.id === fromTrackId)
-        const clip = fromTrack?.clips.find(c => c.id === clipId)
+        const clip = s.tracks.find(t => t.id === fromTrackId)?.clips.find(c => c.id === clipId)
         if (!clip) return s
         return {
           tracks: s.tracks.map(t => {
@@ -199,7 +216,7 @@ export const useProjectStore = create<ProjectState>()(
           set({
             bpm: data.bpm ?? 128,
             bars: data.bars ?? 32,
-            tracks: data.tracks ?? [],
+            tracks: (data.tracks ?? []).map((t: Track) => ({ groupId: null, collapsed: false, ...t })),
             markers: data.markers ?? [],
             selectedTrackId: null,
             selectedClipId: null,
