@@ -13,6 +13,7 @@ interface Props {
 export default function TopBar({ inspectorOpen, onToggleInspector, rackOpen, onToggleRack }: Props) {
   const { bpm, bars, setBpm, setBars, exportJSON, importJSON } = useProjectStore()
   const fileRef = useRef<HTMLInputElement>(null)
+  const temporal = useProjectStore.temporal.getState()
 
   function handleExport() {
     const json = exportJSON()
@@ -35,10 +36,30 @@ export default function TopBar({ inspectorOpen, onToggleInspector, rackOpen, onT
   }
 
   return (
-    <div className="flex items-center gap-3 px-4 py-0 bg-[#242424] border-b border-[#3a3a3a] h-11 shrink-0">
-      <span className="text-[#e8a020] font-bold text-xs tracking-widest uppercase">Track Dissect</span>
+    <div className="flex items-center gap-2 px-3 py-0 bg-[#242424] border-b border-[#3a3a3a] h-11 shrink-0 overflow-x-auto">
+      <span className="text-[#e8a020] font-bold text-xs tracking-widest uppercase shrink-0">Track Dissect</span>
 
-      <div className="flex items-center gap-1.5 ml-3">
+      {/* Undo / Redo buttons — visible on all devices including iPhone */}
+      <div className="flex items-center gap-1 shrink-0">
+        <button
+          onClick={() => temporal.undo()}
+          className="px-2 py-0.5 text-xs bg-[#2a2a2a] hover:bg-[#3a3a3a] rounded border border-[#3a3a3a] transition-colors"
+          title="Undo (Ctrl+Z)"
+        >
+          ↩
+        </button>
+        <button
+          onClick={() => temporal.redo()}
+          className="px-2 py-0.5 text-xs bg-[#2a2a2a] hover:bg-[#3a3a3a] rounded border border-[#3a3a3a] transition-colors"
+          title="Redo (Ctrl+Shift+Z)"
+        >
+          ↪
+        </button>
+      </div>
+
+      <div className="w-px h-4 bg-[#3a3a3a] shrink-0" />
+
+      <div className="flex items-center gap-1.5 shrink-0">
         <label className="text-xs text-gray-500">BPM</label>
         <input
           type="number" value={bpm}
@@ -48,7 +69,7 @@ export default function TopBar({ inspectorOpen, onToggleInspector, rackOpen, onT
         />
       </div>
 
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-1.5 shrink-0">
         <label className="text-xs text-gray-500">Bars</label>
         <input
           type="number" value={bars}
@@ -58,23 +79,20 @@ export default function TopBar({ inspectorOpen, onToggleInspector, rackOpen, onT
         />
       </div>
 
-      <div className="ml-auto flex items-center gap-2">
-        {/* View toggles */}
+      <div className="ml-auto flex items-center gap-2 shrink-0">
         <button
           onClick={onToggleRack}
           className={`px-2 py-0.5 text-xs rounded border transition-colors ${
             rackOpen ? 'bg-[#e8a020] text-black border-[#e8a020]' : 'bg-transparent text-gray-400 border-[#3a3a3a] hover:border-[#555]'
           }`}
-          title="Toggle FX Rack"
         >
-          FX Rack
+          FX
         </button>
         <button
           onClick={onToggleInspector}
           className={`px-2 py-0.5 text-xs rounded border transition-colors ${
             inspectorOpen ? 'bg-[#e8a020] text-black border-[#e8a020]' : 'bg-transparent text-gray-400 border-[#3a3a3a] hover:border-[#555]'
           }`}
-          title="Toggle Inspector"
         >
           Inspector
         </button>

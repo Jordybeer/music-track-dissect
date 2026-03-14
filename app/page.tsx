@@ -1,15 +1,9 @@
 'use client'
 
 import {
-  DndContext,
-  DragEndEvent,
-  DragStartEvent,
-  PointerSensor,
-  TouchSensor,
-  useSensor,
-  useSensors,
-  DragOverlay,
-  closestCenter,
+  DndContext, DragEndEvent, DragStartEvent,
+  PointerSensor, TouchSensor, useSensor, useSensors,
+  DragOverlay, closestCenter,
 } from '@dnd-kit/core'
 import { useState } from 'react'
 import BrowserPanel from '@/components/BrowserPanel'
@@ -18,6 +12,7 @@ import Inspector from '@/components/Inspector'
 import TopBar from '@/components/TopBar'
 import DeviceRack from '@/components/DeviceRack'
 import { useProjectStore, TrackType } from '@/store/projectStore'
+import { useKeyboard } from '@/hooks/useKeyboard'
 
 export default function Home() {
   const { addTrack, reorderTracks, tracks, moveClip } = useProjectStore()
@@ -25,6 +20,8 @@ export default function Home() {
   const [activeKind, setActiveKind] = useState<string | null>(null)
   const [inspectorOpen, setInspectorOpen] = useState(true)
   const [rackOpen, setRackOpen] = useState(true)
+
+  useKeyboard()
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
