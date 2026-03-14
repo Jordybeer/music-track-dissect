@@ -1,24 +1,42 @@
 'use client'
 
 import { useState } from 'react'
-import { Track, useProjectStore } from '@/store/projectStore'
+import { useSortable } from '@dnd-kit/sortable'
+import { useDroppable } from '@dnd-kit/core'
+import { CSS } from '@dnd-kit/utilities'
+import { Track, useProjectStore, uid } from '@/store/projectStore'
 
 interface Props {
   track: Track
   barWidth: number
+  headerW: number
 }
 
-function uid() {
-  return Math.random().toString(36).slice(2, 10)
-}
-
-export default function TrackRow({ track, barWidth }: Props) {
+export default function TrackRow({ track, barWidth, headerW }: Props) {
   const { selectTrack, selectedTrackId, removeTrack, addClip } = useProjectStore()
   const isSelected = selectedTrackId === track.id
   const [isAdding, setIsAdding] = useState(false)
   const [clipBar, setClipBar] = useState(1)
   const [clipLen, setClipLen] = useState(4)
   const [clipLabel, setClipLabel] = useState('')
+
+  // Sortable for track row reordering
+  const {
+    attributes,
+    listeners,
+    setNodeRef: setSortableRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
+    id: `track-${track.id}`,
+    data: { kind: 'track-row', trackId: track.id },
+  })
+
+  // Droppable clip zone
+  const { setNodeRef: setDropRef, isOver } = useDroppable({
+    id: `track-clips-${track.id}`,
+  })
 
   function handleAddClip() {
     addClip(track.id, {
@@ -33,58 +51,81 @@ export default function TrackRow({ track, barWidth }: Props) {
     setClipLabel('')
   }
 
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+  }
+
   return (
     <div
-      className={`flex h-12 border-b border-[#2a2a2a] ${ isSelected ? 'bg-[#252535]' : 'hover:bg-[#1e1e1e]' } transition-colors`}
-      onClick={() => selectTrack(track.id)}
+      ref={setSortableRef}
+      style={style}
+      className={`flex h-12 border-b border-[#2a2a2a] relative ${
+        isSelected ? 'bg-[#252535]' : isOver ? 'bg-[#1c2a1c]' : 'hover:bg-[#1e1e1e]'
+      } transition-colors`}
     >
-      {/* Track header */}
+      {/* Drag handle + header */}
       <div
-        className="w-40 shrink-0 flex items-center gap-2 px-2 border-r border-[#3a3a3a] cursor-pointer"
-        style={{ borderLeft: `3px solid ${track.color}` }}
+        className="shrink-0 flex items-center gap-1 px-2 border-r border-[#3a3a3a] cursor-pointer"
+        style={{ width: headerW, borderLeft: `3px solid ${track.color}` }}
+        onClick={() => selectTrack(track.id)}
       >
+        {/* Drag handle */}
+        <div
+          {...attributes}
+          {...listeners}
+          className="text-gray-600 hover:text-gray-300 cursor-grab active:cursor-grabbing px-0.5 shrink-0 select-none"
+          title="Drag to reorder"
+        >
+          ⠿
+        </div>
         <span className="text-xs font-medium truncate flex-1">{track.name}</span>
         <button
           onClick={(e) => { e.stopPropagation(); setIsAdding(!isAdding) }}
-          className="text-gray-500 hover:text-white text-xs px-1"
+          className="text-gray-500 hover:text-white text-xs px-0.5 shrink-0"
           title="Add clip"
         >
           +
         </button>
         <button
           onClick={(e) => { e.stopPropagation(); removeTrack(track.id) }}
-          className="text-gray-600 hover:text-red-400 text-xs px-1"
-          title="Remove track"
+          className="text-gray-600 hover:text-red-400 text-xs px-0.5 shrink-0"
+          title="Remove"
         >
           ×
         </button>
       </div>
 
-      {/* Clip area */}
-      <div className="flex-1 relative overflow-x-auto">
-        <div className="h-full relative" style={{ minWidth: '100%' }}>
-          {track.clips.map((clip) => (
-            <div
-              key={clip.id}
-              className="absolute top-1 h-10 rounded text-xs flex items-center px-2 font-medium overflow-hidden cursor-pointer hover:brightness-110"
-              style={{
-                left: (clip.startBar - 1) * barWidth,
-                width: clip.lengthBars * barWidth - 2,
-                background: clip.color + 'cc',
-                border: `1px solid ${clip.color}`,
-              }}
-              title={clip.notes || clip.label}
-            >
-              {clip.label}
-            </div>
-          ))}
-        </div>
+      {/* Clip drop zone */}
+      <div
+        ref={setDropRef}
+        className="flex-1 relative"
+      >
+        {track.clips.map((clip) => (
+          <div
+            key={clip.id}
+            className="absolute top-1 h-10 rounded text-xs flex items-center px-2 font-medium overflow-hidden hover:brightness-110 select-none"
+            style={{
+              left: (clip.startBar - 1) * barWidth,
+              width: clip.lengthBars * barWidth - 2,
+              background: clip.color + 'cc',
+              border: `1px solid ${clip.color}`,
+              cursor: 'default',
+            }}
+            title={clip.notes || clip.label}
+            onClick={(e) => { e.stopPropagation(); selectTrack(track.id) }}
+          >
+            <span className="truncate">{clip.label}</span>
+          </div>
+        ))}
       </div>
 
-      {/* Quick-add popover */}
+      {/* Add clip popover — fixed position relative to viewport */}
       {isAdding && (
         <div
-          className="absolute z-10 left-40 bg-[#2a2a2a] border border-[#3a3a3a] rounded p-3 flex gap-2 items-center shadow-xl mt-12"
+          className="fixed z-50 bg-[#2a2a2a] border border-[#3a3a3a] rounded p-3 flex gap-2 items-center shadow-2xl"
+          style={{ top: '4rem', left: headerW + 8 }}
           onClick={(e) => e.stopPropagation()}
         >
           <input
@@ -92,6 +133,7 @@ export default function TrackRow({ track, barWidth }: Props) {
             placeholder="Label"
             value={clipLabel}
             onChange={(e) => setClipLabel(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleAddClip()}
             autoFocus
           />
           <span className="text-xs text-gray-400">Bar</span>
@@ -114,7 +156,7 @@ export default function TrackRow({ track, barWidth }: Props) {
           </button>
           <button
             onClick={() => setIsAdding(false)}
-            className="text-gray-400 hover:text-white text-xs px-1"
+            className="text-gray-400 hover:text-white text-xs"
           >
             ✕
           </button>

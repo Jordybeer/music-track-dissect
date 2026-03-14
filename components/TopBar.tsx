@@ -1,9 +1,11 @@
 'use client'
 
+import { useRef } from 'react'
 import { useProjectStore } from '@/store/projectStore'
 
 export default function TopBar() {
-  const { bpm, bars, setBpm, setBars, exportJSON } = useProjectStore()
+  const { bpm, bars, setBpm, setBars, exportJSON, importJSON } = useProjectStore()
+  const fileRef = useRef<HTMLInputElement>(null)
 
   function handleExport() {
     const json = exportJSON()
@@ -14,6 +16,17 @@ export default function TopBar() {
     a.download = 'track-dissect.json'
     a.click()
     URL.revokeObjectURL(url)
+  }
+
+  function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      const text = ev.target?.result as string
+      importJSON(text)
+    }
+    reader.readAsText(file)
   }
 
   return (
@@ -42,9 +55,16 @@ export default function TopBar() {
         />
       </div>
       <div className="ml-auto flex gap-2">
+        <input ref={fileRef} type="file" accept=".json" className="hidden" onChange={handleImport} />
+        <button
+          onClick={() => fileRef.current?.click()}
+          className="px-3 py-1 text-xs bg-[#3a3a3a] hover:bg-[#4a4a4a] rounded border border-[#4a4a4a] transition-colors"
+        >
+          Import JSON
+        </button>
         <button
           onClick={handleExport}
-          className="px-3 py-1 text-xs bg-[#3a3a3a] hover:bg-[#4a4a4a] rounded border border-[#4a4a4a] transition-colors"
+          className="px-3 py-1 text-xs bg-[#e8a020] text-black font-bold hover:bg-yellow-400 rounded transition-colors"
         >
           Export JSON
         </button>

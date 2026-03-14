@@ -14,7 +14,7 @@ const items: { label: string; type: TrackType; color: string; description: strin
 function DraggableItem({ label, type, color, description }: typeof items[0]) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `browser-${type}`,
-    data: { type },
+    data: { kind: 'browser-item', type },
   })
 
   return (
@@ -22,13 +22,13 @@ function DraggableItem({ label, type, color, description }: typeof items[0]) {
       ref={setNodeRef}
       {...listeners}
       {...attributes}
-      className={`p-2 rounded cursor-grab active:cursor-grabbing border transition-all ${
-        isDragging ? 'opacity-40' : 'opacity-100'
-      } bg-[#2a2a2a] hover:bg-[#333] border-[#3a3a3a] hover:border-[#555]`}
+      className={`p-2 rounded border transition-all select-none ${
+        isDragging ? 'opacity-30 scale-95' : 'opacity-100'
+      } bg-[#2a2a2a] hover:bg-[#333] border-[#3a3a3a] hover:border-[#555] cursor-grab active:cursor-grabbing`}
     >
       <div className="flex items-center gap-2">
         <div className="w-2 h-2 rounded-full shrink-0" style={{ background: color }} />
-        <span className="text-sm font-medium">{label}</span>
+        <span className="text-xs font-medium">{label}</span>
       </div>
       <p className="text-xs text-gray-500 mt-0.5 ml-4">{description}</p>
     </div>
