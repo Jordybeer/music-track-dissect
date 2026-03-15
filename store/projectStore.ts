@@ -314,7 +314,7 @@ export const useProjectStore = create<ProjectState>()(
                 clips: (t.clips ?? []).map((c: Clip) => ({
                   ...c,
                   steps: c.steps?.length === 16
-                    ? c.steps.map(s => ({ duration: '16n', ...s }))
+                    ? c.steps.map((s: StepNote) => ({ ...s, duration: s.duration ?? '16n' }))
                     : makeSteps(),
                   stepRows: c.stepRows ?? 1,
                 })),
