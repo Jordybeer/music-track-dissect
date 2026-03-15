@@ -24,7 +24,7 @@ export default function Inspector({ onClose }: Props) {
   const isPatternTrack = track?.type === 'midi' || track?.type === 'drum'
 
   return (
-    <div className="w-56 shrink-0 bg-[#242424] border-l border-[#3a3a3a] flex flex-col overflow-hidden">
+    <div className="w-48 lg:w-56 shrink-0 bg-[#242424] border-l border-[#3a3a3a] flex flex-col overflow-hidden">
       {/* Header */}
       <div className="px-3 py-2 border-b border-[#3a3a3a] flex items-center gap-2 shrink-0">
         {track ? (
@@ -40,7 +40,7 @@ export default function Inspector({ onClose }: Props) {
         ) : (
           <span className="flex-1 text-xs text-gray-500">Inspector</span>
         )}
-        <button onClick={onClose} className="text-gray-500 hover:text-white text-xs ml-1 shrink-0">×</button>
+        <button onClick={onClose} className="text-gray-500 hover:text-white text-xs ml-1 shrink-0 touch-manipulation">×</button>
       </div>
 
       {!track ? (
@@ -71,7 +71,7 @@ export default function Inspector({ onClose }: Props) {
                   {track.groupId && (
                     <button
                       onClick={() => setGroupId(track.id, null)}
-                      className="text-[#a855f7] hover:text-white text-xs px-1.5 py-1.5 rounded border border-[#a855f7]/40 hover:border-[#a855f7] transition-colors"
+                      className="text-[#a855f7] hover:text-white text-xs px-1.5 py-1.5 rounded border border-[#a855f7]/40 hover:border-[#a855f7] transition-colors touch-manipulation"
                       title="Remove from group"
                     >↑</button>
                   )}
@@ -96,7 +96,7 @@ export default function Inspector({ onClose }: Props) {
                 <button
                   key={clip.id}
                   onClick={() => selectClip(selectedClipId === clip.id ? null : clip.id)}
-                  className={`w-full text-left px-2 py-1.5 rounded border text-xs transition-colors ${
+                  className={`w-full text-left px-2 py-1.5 rounded border text-xs transition-colors touch-manipulation ${
                     selectedClipId === clip.id
                       ? 'border-[#e8a020] bg-[#2a2a1a] text-white'
                       : 'border-[#3a3a3a] bg-[#1a1a1a] text-gray-300 hover:border-[#555]'
@@ -132,7 +132,7 @@ export default function Inspector({ onClose }: Props) {
                 <div key={c.id} className="flex items-center gap-1 text-xs py-0.5">
                   <div className="w-1.5 h-1.5 rounded-full" style={{ background: c.color }} />
                   <span className="flex-1 truncate text-gray-300">{c.name}</span>
-                  <button onClick={() => setGroupId(c.id, null)} className="text-gray-500 hover:text-red-400 text-[10px]">↑</button>
+                  <button onClick={() => setGroupId(c.id, null)} className="text-gray-500 hover:text-red-400 text-[10px] touch-manipulation">↑</button>
                 </div>
               ))}
               {tracks.filter(t => t.groupId === track.id).length === 0 && (
@@ -186,7 +186,7 @@ export default function Inspector({ onClose }: Props) {
                   return (
                     <button key={s}
                       onClick={() => updateTrack(track.id, { sends: active ? track.sends.filter(x => x !== s) : [...track.sends, s] })}
-                      className={`px-2 py-0.5 text-xs rounded border transition-colors ${
+                      className={`px-2 py-0.5 text-xs rounded border transition-colors touch-manipulation ${
                         active ? 'bg-[#f59e0b] text-black border-[#f59e0b]' : 'bg-transparent text-gray-400 border-[#3a3a3a] hover:border-[#555]'
                       }`}>{s}</button>
                   )
@@ -199,7 +199,7 @@ export default function Inspector({ onClose }: Props) {
                 <div key={device.id} className="flex items-center gap-1 bg-[#1a1a1a] border border-[#3a3a3a] rounded px-2 py-1 mb-1">
                   <span className="text-[10px] text-gray-600">{i + 1}</span>
                   <span className="text-xs flex-1 truncate">{device.name}</span>
-                  <button onClick={() => removeFX(track.id, device.id)} className="text-gray-600 hover:text-red-400 text-xs">×</button>
+                  <button onClick={() => removeFX(track.id, device.id)} className="text-gray-600 hover:text-red-400 text-xs touch-manipulation">×</button>
                 </div>
               ))}
               <select className="w-full bg-[#1a1a1a] border border-[#3a3a3a] rounded px-1 py-1 text-xs text-white mt-1"

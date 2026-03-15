@@ -26,7 +26,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className="h-full">
-      <body className="h-full bg-[#1a1a1a] text-white">{children}</body>
+      <body className="h-full bg-[#1a1a1a] text-white safe-left safe-right safe-bottom">{children}</body>
     </html>
   )
 }

@@ -15,6 +15,7 @@ export default function TopBar({ inspectorOpen, onToggleInspector, rackOpen, onT
   const fileRef = useRef<HTMLInputElement>(null)
   const [undoFlash, setUndoFlash] = useState(false)
   const [redoFlash, setRedoFlash] = useState(false)
+  const [gridOpen, setGridOpen] = useState(false)
 
   function triggerUndo() {
     useProjectStore.temporal.getState().undo()
@@ -84,7 +85,11 @@ export default function TopBar({ inspectorOpen, onToggleInspector, rackOpen, onT
 
         {/* Zoom — ‹ label › */}
         <div className="flex items-center gap-1 shrink-0">
-          <label className="text-xs text-gray-500 select-none">Zoom</label>
+          <button
+            onClick={() => setGridOpen(v => !v)}
+            className="text-xs text-gray-500 select-none hover:text-white transition-colors touch-manipulation"
+            title="Toggle grid picker"
+          >Zoom</button>
           <button
             onClick={() => currentIdx > 0 && setBarWidth(ZOOM_LEVELS[currentIdx - 1].px)}
             disabled={currentIdx === 0}
@@ -102,7 +107,7 @@ export default function TopBar({ inspectorOpen, onToggleInspector, rackOpen, onT
 
         <div className="ml-auto flex items-center gap-2 shrink-0">
           <button onClick={onToggleRack} className={`${btnBase} ${ rackOpen ? 'bg-[#e8a020] text-black border-[#e8a020]' : 'bg-transparent text-gray-400 border-[#3a3a3a] hover:border-[#555]' }`}>FX</button>
-          <button onClick={onToggleInspector} className={`${btnBase} ${ inspectorOpen ? 'bg-[#e8a020] text-black border-[#e8a020]' : 'bg-transparent text-gray-400 border-[#3a3a3a] hover:border-[#555]' }`}>Inspector</button>
+          <button onClick={onToggleInspector} className={`${btnBase} ${ inspectorOpen ? 'bg-[#e8a020] text-black border-[#e8a020]' : 'bg-transparent text-gray-400 border-[#3a3a3a] hover:border-[#555]' }`}>Insp</button>
           <div className="w-px h-5 bg-[#3a3a3a]" />
           <input ref={fileRef} type="file" accept=".json" className="hidden" onChange={handleImport} />
           <button onClick={() => fileRef.current?.click()} className={`${btnBase} bg-[#2a2a2a] text-white border-[#3a3a3a] hover:bg-[#3a3a3a]`}>Import</button>
@@ -110,23 +115,25 @@ export default function TopBar({ inspectorOpen, onToggleInspector, rackOpen, onT
         </div>
       </div>
 
-      {/* Zoom pill row — quick tap for any level */}
-      <div className="flex items-center gap-1 px-3 pb-1.5 overflow-x-auto">
-        <span className="text-[10px] text-gray-600 shrink-0 mr-1">GRID</span>
-        {ZOOM_LEVELS.map((z) => (
-          <button
-            key={z.label}
-            onClick={() => setBarWidth(z.px)}
-            className={`px-2.5 py-1 text-[11px] rounded border shrink-0 transition-colors touch-manipulation font-mono ${
-              z.px === barWidth
-                ? 'bg-[#e8a020] text-black border-[#e8a020] font-bold'
-                : 'bg-[#1a1a1a] text-gray-400 border-[#3a3a3a] hover:border-[#555] hover:text-white'
-            }`}
-          >
-            {z.label}
-          </button>
-        ))}
-      </div>
+      {/* Zoom pill row — toggled, hidden by default on landscape */}
+      {gridOpen && (
+        <div className="flex items-center gap-1 px-3 pb-1.5 overflow-x-auto">
+          <span className="text-[10px] text-gray-600 shrink-0 mr-1">GRID</span>
+          {ZOOM_LEVELS.map((z) => (
+            <button
+              key={z.label}
+              onClick={() => { setBarWidth(z.px); setGridOpen(false) }}
+              className={`px-2.5 py-1 text-[11px] rounded border shrink-0 transition-colors touch-manipulation font-mono ${
+                z.px === barWidth
+                  ? 'bg-[#e8a020] text-black border-[#e8a020] font-bold'
+                  : 'bg-[#1a1a1a] text-gray-400 border-[#3a3a3a] hover:border-[#555] hover:text-white'
+              }`}
+            >
+              {z.label}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

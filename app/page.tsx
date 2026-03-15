@@ -15,7 +15,7 @@ import { useProjectStore, TrackType } from '@/store/projectStore'
 import { useKeyboard } from '@/hooks/useKeyboard'
 
 export default function Home() {
-  const { addTrack, reorderTracks, tracks, moveClip, setGroupId } = useProjectStore()
+  const { reorderTracks, tracks, moveClip, setGroupId } = useProjectStore()
   const [activeId, setActiveId] = useState<string | null>(null)
   const [activeKind, setActiveKind] = useState<string | null>(null)
   const [inspectorOpen, setInspectorOpen] = useState(true)
@@ -25,7 +25,7 @@ export default function Home() {
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 400, tolerance: 8 } })
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 12 } })
   )
 
   function handleDragStart(event: DragStartEvent) {
@@ -42,17 +42,10 @@ export default function Home() {
     const kind = active.data.current?.kind
     const overId = String(over.id)
 
-    // Browser item dropped onto timeline or track → add track
-    if (kind === 'browser-item' && (overId === 'timeline' || overId.startsWith('track-'))) {
-      addTrack(active.data.current?.type as TrackType)
-      return
-    }
-
     // Track row dropped onto a group header → assign to group
     if (kind === 'track-row' && overId.startsWith('group-drop-')) {
       const groupId = overId.replace('group-drop-', '')
       const trackId = active.data.current?.trackId
-      // Don't allow a group to be dropped into itself
       if (trackId && trackId !== groupId) {
         setGroupId(trackId, groupId)
       }
@@ -105,11 +98,6 @@ export default function Home() {
       </div>
 
       <DragOverlay>
-        {activeId && activeKind === 'browser-item' && (
-          <div className="px-3 py-2 bg-[#333] border border-[#555] rounded text-xs text-white shadow-xl opacity-90">
-            {activeId.replace('browser-', '')}
-          </div>
-        )}
         {activeId && activeKind === 'track-row' && (
           <div className="h-12 w-64 bg-[#252535] border border-[#a855f7]/40 rounded text-xs text-white shadow-xl opacity-80 flex items-center px-3 gap-2">
             <span className="text-[#a855f7]">⠿</span> Moving track…

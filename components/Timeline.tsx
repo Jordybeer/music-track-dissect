@@ -58,7 +58,6 @@ export default function Timeline() {
                 className="shrink-0 border-r border-[#2a2a2a] flex items-center justify-start pl-1 h-full"
                 style={{ width: barWidth }}
               >
-                {/* Show number every 4 bars at small zoom, every bar at large zoom */}
                 {(barWidth >= 36 || i % 4 === 0) && (
                   <span className="text-[10px] text-gray-500 leading-none">{i + 1}</span>
                 )}
@@ -79,7 +78,7 @@ export default function Timeline() {
           {tracks.filter(t => t.groupId === null).length === 0 ? (
             <div className="flex flex-col items-center justify-center h-40 gap-3 animate-fade-in">
               <div className="text-4xl opacity-20">🎵</div>
-              <p className="text-gray-600 text-sm">Drag a track type from the browser to get started</p>
+              <p className="text-gray-600 text-sm">Tap a track type in the browser to get started</p>
             </div>
           ) : (
             <SortableContext
