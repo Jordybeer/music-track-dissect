@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { useSortable, useDraggable } from '@dnd-kit/sortable'
+import { useSortable } from '@dnd-kit/sortable'
 import { useDroppable } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
 import { Track, useProjectStore } from '@/store/projectStore'
@@ -27,10 +27,8 @@ export default function GroupRow({ group, children, barWidth, headerW }: Props) 
     data: { kind: 'track-row', trackId: group.id },
   })
 
-  // The entire group row is now the drop zone — much easier to hit
   const { setNodeRef: setDropRef, isOver } = useDroppable({ id: `group-drop-${group.id}` })
 
-  // Merge both refs onto the outer wrapper
   function mergeRefs(el: HTMLDivElement | null) {
     setSortableRef(el)
     setDropRef(el)
@@ -44,7 +42,6 @@ export default function GroupRow({ group, children, barWidth, headerW }: Props) 
 
   return (
     <div ref={mergeRefs} style={style}>
-      {/* Group header — full row is the drop target */}
       <div
         className={`flex border-b border-[#3a3a3a] transition-colors min-h-[44px] ${
           isOver
@@ -68,7 +65,6 @@ export default function GroupRow({ group, children, barWidth, headerW }: Props) 
           <button
             onClick={(e) => { e.stopPropagation(); toggleCollapse(group.id) }}
             className="text-[#a855f7] hover:text-white text-sm w-5 shrink-0 text-center touch-manipulation"
-            title={group.collapsed ? 'Expand' : 'Collapse'}
           >
             {group.collapsed ? '▶' : '▼'}
           </button>
@@ -85,7 +81,6 @@ export default function GroupRow({ group, children, barWidth, headerW }: Props) 
           >×</button>
         </div>
 
-        {/* Group bus lane — also part of the drop zone */}
         <div className="flex-1 relative bg-[#a855f7]/5 flex items-center">
           {isOver ? (
             <span className="absolute inset-0 flex items-center justify-center text-[11px] text-[#a855f7] font-semibold animate-fade-in">
@@ -99,7 +94,6 @@ export default function GroupRow({ group, children, barWidth, headerW }: Props) 
         </div>
       </div>
 
-      {/* Children */}
       {!group.collapsed && (
         <>
           {directChildren.map((child) =>
