@@ -10,14 +10,14 @@ interface Props {
   onToggleRack: () => void
 }
 
-// Compress JSON -> base64url for URL hash sharing
 async function encodeProject(json: string): Promise<string> {
   const stream = new CompressionStream('gzip')
   const writer = stream.writable.getWriter()
   writer.write(new TextEncoder().encode(json))
   writer.close()
   const buf = await new Response(stream.readable).arrayBuffer()
-  return btoa(String.fromCharCode(...new Uint8Array(buf)))
+  // Use Array.from instead of spread to avoid downlevelIteration requirement
+  return btoa(Array.from(new Uint8Array(buf), b => String.fromCharCode(b)).join(''))
     .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '')
 }
 
@@ -42,14 +42,12 @@ export default function TopBar({ inspectorOpen, onToggleInspector, rackOpen, onT
   const [shareFlash, setShareFlash] = useState<'idle' | 'copying' | 'done' | 'error'>('idle')
   const [editingName, setEditingName] = useState(false)
 
-  // On mount: load from URL hash if present
   useEffect(() => {
     const hash = window.location.hash.slice(1)
     if (!hash) return
     decodeProject(hash)
       .then(json => {
         importJSON(json)
-        // Clear hash so refreshing doesn\'t re-import
         history.replaceState(null, '', window.location.pathname)
       })
       .catch(console.error)
@@ -68,7 +66,6 @@ export default function TopBar({ inspectorOpen, onToggleInspector, rackOpen, onT
     setTimeout(() => setRedoFlash(false), 400)
   }
 
-  // 💾 Download .json file
   function handleDownload() {
     const json = exportJSON()
     const blob = new Blob([json], { type: 'application/json' })
@@ -79,7 +76,6 @@ export default function TopBar({ inspectorOpen, onToggleInspector, rackOpen, onT
     URL.revokeObjectURL(url)
   }
 
-  // 🔗 Encode project into URL hash and copy to clipboard
   async function handleShare() {
     setShareFlash('copying')
     try {
@@ -113,7 +109,6 @@ export default function TopBar({ inspectorOpen, onToggleInspector, rackOpen, onT
     <div className="flex flex-col shrink-0 bg-[#242424] border-b border-[#3a3a3a]">
       <div className="flex items-center gap-2 px-3 h-12 overflow-x-auto">
 
-        {/* Editable project name */}
         {editingName ? (
           <input
             autoFocus
@@ -182,22 +177,15 @@ export default function TopBar({ inspectorOpen, onToggleInspector, rackOpen, onT
 
           <div className="w-px h-5 bg-[#3a3a3a]" />
 
-          {/* Import */}
           <input ref={fileRef} type="file" accept=".json" className="hidden" onChange={handleImport} />
-          <button
-            onClick={() => fileRef.current?.click()}
+          <button onClick={() => fileRef.current?.click()}
             className={`${btnBase} bg-[#2a2a2a] text-white border-[#3a3a3a] hover:bg-[#3a3a3a]`}
-            title="Import .json"
-          >📂</button>
+            title="Import .json">📂</button>
 
-          {/* Download */}
-          <button
-            onClick={handleDownload}
+          <button onClick={handleDownload}
             className={`${btnBase} bg-[#2a2a2a] text-white border-[#3a3a3a] hover:bg-[#3a3a3a]`}
-            title="Download project as .json"
-          >💾</button>
+            title="Download project as .json">💾</button>
 
-          {/* Share link */}
           <button
             onClick={handleShare}
             title={shareFlash === 'done' ? 'Link copied!' : shareFlash === 'error' ? 'Failed' : 'Copy shareable link'}
