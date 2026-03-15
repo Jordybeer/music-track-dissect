@@ -21,7 +21,6 @@ export default function Inspector({ onClose }: Props) {
   const track = tracks.find(t => t.id === selectedTrackId)
   const groups = tracks.filter(t => t.type === 'group')
   const selectedClip = track?.clips.find(c => c.id === selectedClipId)
-
   const isPatternTrack = track?.type === 'midi' || track?.type === 'drum'
 
   return (
@@ -41,7 +40,7 @@ export default function Inspector({ onClose }: Props) {
         ) : (
           <span className="flex-1 text-xs text-gray-500">Inspector</span>
         )}
-        <button onClick={onClose} className="text-gray-500 hover:text-white text-xs ml-1 shrink-0" title="Close">×</button>
+        <button onClick={onClose} className="text-gray-500 hover:text-white text-xs ml-1 shrink-0">×</button>
       </div>
 
       {!track ? (
@@ -51,15 +50,48 @@ export default function Inspector({ onClose }: Props) {
       ) : (
         <div className="flex-1 overflow-y-auto">
 
-          {/* ---- Clip list & step editor ---- */}
+          {/* ── MOVE TO GROUP ── always visible for non-group tracks */}
+          {track.type !== 'group' && (
+            <div className="px-3 py-2.5 border-b border-[#3a3a3a] bg-[#1e1e2e]">
+              <label className="text-[10px] text-[#a855f7] font-semibold uppercase tracking-wider block mb-1.5">Move to Group</label>
+              {groups.length === 0 ? (
+                <p className="text-[10px] text-gray-600 italic">No groups yet — add a Group track first</p>
+              ) : (
+                <div className="flex gap-1.5 items-center">
+                  <select
+                    className="flex-1 bg-[#2a1f3a] border border-[#a855f7]/40 rounded px-2 py-1.5 text-xs text-white focus:border-[#a855f7] outline-none"
+                    value={track.groupId ?? ''}
+                    onChange={(e) => setGroupId(track.id, e.target.value || null)}
+                  >
+                    <option value="">— Ungrouped —</option>
+                    {groups.map(g => (
+                      <option key={g.id} value={g.id}>{g.name}</option>
+                    ))}
+                  </select>
+                  {track.groupId && (
+                    <button
+                      onClick={() => setGroupId(track.id, null)}
+                      className="text-[#a855f7] hover:text-white text-xs px-1.5 py-1.5 rounded border border-[#a855f7]/40 hover:border-[#a855f7] transition-colors"
+                      title="Remove from group"
+                    >↑</button>
+                  )}
+                </div>
+              )}
+              {track.groupId && (
+                <p className="text-[9px] text-[#a855f7]/60 mt-1">
+                  In: {groups.find(g => g.id === track.groupId)?.name}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* ── Clip list & step editor ── */}
           {isPatternTrack && (
             <div className="p-3 border-b border-[#3a3a3a] space-y-2">
               <label className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider block">Clips</label>
-
               {track.clips.length === 0 && (
-                <p className="text-[10px] text-gray-600 italic">No clips yet — add one from the timeline</p>
+                <p className="text-[10px] text-gray-600 italic">No clips yet</p>
               )}
-
               {track.clips.map(clip => (
                 <button
                   key={clip.id}
@@ -77,17 +109,10 @@ export default function Inspector({ onClose }: Props) {
                   </div>
                 </button>
               ))}
-
-              {/* Step editor for selected clip */}
               {selectedClip && (
                 <div className="mt-2">
                   <StepEditor
-                    clip={{
-                      ...selectedClip,
-                      steps: selectedClip.steps?.length === 16
-                        ? selectedClip.steps
-                        : makeSteps(),
-                    }}
+                    clip={{ ...selectedClip, steps: selectedClip.steps?.length === 16 ? selectedClip.steps : makeSteps() }}
                     trackId={track.id}
                     color={track.color}
                     isDrum={track.type === 'drum'}
@@ -97,42 +122,27 @@ export default function Inspector({ onClose }: Props) {
             </div>
           )}
 
-          {/* ---- Track settings ---- */}
+          {/* ── Group children list ── */}
+          {track.type === 'group' && (
+            <div className="p-3 border-b border-[#3a3a3a]">
+              <label className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider block mb-1.5">
+                Children ({tracks.filter(t => t.groupId === track.id).length})
+              </label>
+              {tracks.filter(t => t.groupId === track.id).map(c => (
+                <div key={c.id} className="flex items-center gap-1 text-xs py-0.5">
+                  <div className="w-1.5 h-1.5 rounded-full" style={{ background: c.color }} />
+                  <span className="flex-1 truncate text-gray-300">{c.name}</span>
+                  <button onClick={() => setGroupId(c.id, null)} className="text-gray-500 hover:text-red-400 text-[10px]">↑</button>
+                </div>
+              ))}
+              {tracks.filter(t => t.groupId === track.id).length === 0 && (
+                <p className="text-[10px] text-gray-600 italic">Select a track and assign it here</p>
+              )}
+            </div>
+          )}
+
+          {/* ── Track settings ── */}
           <div className="p-3 space-y-3">
-
-            {/* Group children */}
-            {track.type === 'group' && (
-              <div>
-                <label className="text-xs text-gray-400 block mb-1">Children ({tracks.filter(t => t.groupId === track.id).length})</label>
-                {tracks.filter(t => t.groupId === track.id).map(c => (
-                  <div key={c.id} className="flex items-center gap-1 text-xs py-0.5">
-                    <div className="w-1.5 h-1.5 rounded-full" style={{ background: c.color }} />
-                    <span className="flex-1 truncate text-gray-300">{c.name}</span>
-                    <button onClick={() => setGroupId(c.id, null)} className="text-gray-500 hover:text-red-400 text-[10px]">↑</button>
-                  </div>
-                ))}
-                {tracks.filter(t => t.groupId === track.id).length === 0 && (
-                  <p className="text-[10px] text-gray-600 italic">Assign tracks below ↓</p>
-                )}
-              </div>
-            )}
-
-            {/* Assign to group */}
-            {track.type !== 'group' && groups.length > 0 && (
-              <div>
-                <label className="text-xs text-gray-400 block mb-1">Group / Bus</label>
-                <select
-                  className="w-full bg-[#1a1a1a] border border-[#3a3a3a] rounded px-1 py-1 text-xs text-white"
-                  value={track.groupId ?? ''}
-                  onChange={(e) => setGroupId(track.id, e.target.value || null)}
-                >
-                  <option value="">— None —</option>
-                  {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-                </select>
-              </div>
-            )}
-
-            {/* Role */}
             <div>
               <label className="text-xs text-gray-400 block mb-1">Layer Role</label>
               <input
@@ -142,67 +152,47 @@ export default function Inspector({ onClose }: Props) {
                 onChange={(e) => updateTrack(track.id, { role: e.target.value })}
               />
             </div>
-
-            {/* Key + Scale */}
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="text-xs text-gray-400 block mb-1">Key</label>
-                <select
-                  className="w-full bg-[#1a1a1a] border border-[#3a3a3a] rounded px-1 py-1 text-xs text-white"
-                  value={track.key}
-                  onChange={(e) => updateTrack(track.id, { key: e.target.value })}
-                >
+                <select className="w-full bg-[#1a1a1a] border border-[#3a3a3a] rounded px-1 py-1 text-xs text-white"
+                  value={track.key} onChange={(e) => updateTrack(track.id, { key: e.target.value })}>
                   <option value="">—</option>
                   {KEYS.map(k => <option key={k} value={k}>{k}</option>)}
                 </select>
               </div>
               <div>
                 <label className="text-xs text-gray-400 block mb-1">Scale</label>
-                <select
-                  className="w-full bg-[#1a1a1a] border border-[#3a3a3a] rounded px-1 py-1 text-xs text-white"
-                  value={track.scale}
-                  onChange={(e) => updateTrack(track.id, { scale: e.target.value })}
-                >
+                <select className="w-full bg-[#1a1a1a] border border-[#3a3a3a] rounded px-1 py-1 text-xs text-white"
+                  value={track.scale} onChange={(e) => updateTrack(track.id, { scale: e.target.value })}>
                   <option value="">—</option>
                   {SCALES.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
             </div>
-
-            {/* Notes */}
             <div>
               <label className="text-xs text-gray-400 block mb-1">Notes</label>
               <textarea
                 className="w-full bg-[#1a1a1a] border border-[#3a3a3a] rounded px-2 py-1 text-xs text-white resize-none"
-                rows={3}
-                placeholder="Observations..."
-                value={track.notes}
-                onChange={(e) => updateTrack(track.id, { notes: e.target.value })}
+                rows={3} placeholder="Observations..."
+                value={track.notes} onChange={(e) => updateTrack(track.id, { notes: e.target.value })}
               />
             </div>
-
-            {/* Sends */}
             <div>
               <label className="text-xs text-gray-400 block mb-1">Sends</label>
               <div className="flex gap-1 flex-wrap">
                 {['A', 'B', 'C', 'D'].map(s => {
                   const active = track.sends.includes(s)
                   return (
-                    <button
-                      key={s}
-                      onClick={() => updateTrack(track.id, {
-                        sends: active ? track.sends.filter(x => x !== s) : [...track.sends, s]
-                      })}
+                    <button key={s}
+                      onClick={() => updateTrack(track.id, { sends: active ? track.sends.filter(x => x !== s) : [...track.sends, s] })}
                       className={`px-2 py-0.5 text-xs rounded border transition-colors ${
                         active ? 'bg-[#f59e0b] text-black border-[#f59e0b]' : 'bg-transparent text-gray-400 border-[#3a3a3a] hover:border-[#555]'
-                      }`}
-                    >{s}</button>
+                      }`}>{s}</button>
                   )
                 })}
               </div>
             </div>
-
-            {/* FX Chain */}
             <div>
               <label className="text-xs text-gray-400 block mb-1">FX Chain</label>
               {track.fx.map((device, i) => (
@@ -212,11 +202,8 @@ export default function Inspector({ onClose }: Props) {
                   <button onClick={() => removeFX(track.id, device.id)} className="text-gray-600 hover:text-red-400 text-xs">×</button>
                 </div>
               ))}
-              <select
-                className="w-full bg-[#1a1a1a] border border-[#3a3a3a] rounded px-1 py-1 text-xs text-white mt-1"
-                value=""
-                onChange={(e) => { if (e.target.value) addFX(track.id, { id: uid(), name: e.target.value, params: {} }) }}
-              >
+              <select className="w-full bg-[#1a1a1a] border border-[#3a3a3a] rounded px-1 py-1 text-xs text-white mt-1"
+                value="" onChange={(e) => { if (e.target.value) addFX(track.id, { id: uid(), name: e.target.value, params: {} }) }}>
                 <option value="">+ Add FX device</option>
                 {FX_DEVICES.map(d => <option key={d} value={d}>{d}</option>)}
               </select>
