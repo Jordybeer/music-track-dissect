@@ -11,7 +11,8 @@ import Timeline from '@/components/Timeline'
 import Inspector from '@/components/Inspector'
 import TopBar from '@/components/TopBar'
 import DeviceRack from '@/components/DeviceRack'
-import { useProjectStore, TrackType } from '@/store/projectStore'
+import TransportBar from '@/components/TransportBar'
+import { useProjectStore } from '@/store/projectStore'
 import { useKeyboard } from '@/hooks/useKeyboard'
 
 export default function Home() {
@@ -42,34 +43,25 @@ export default function Home() {
     const kind = active.data.current?.kind
     const overId = String(over.id)
 
-    // Track row dropped onto a group header → assign to group
     if (kind === 'track-row' && overId.startsWith('group-drop-')) {
       const groupId = overId.replace('group-drop-', '')
       const trackId = active.data.current?.trackId
-      if (trackId && trackId !== groupId) {
-        setGroupId(trackId, groupId)
-      }
+      if (trackId && trackId !== groupId) setGroupId(trackId, groupId)
       return
     }
 
-    // Track row reorder
     if (kind === 'track-row') {
       const fromIndex = tracks.findIndex(t => `track-${t.id}` === String(active.id))
-      const toIndex = tracks.findIndex(t => `track-${t.id}` === overId)
-      if (fromIndex !== -1 && toIndex !== -1 && fromIndex !== toIndex) {
-        reorderTracks(fromIndex, toIndex)
-      }
+      const toIndex   = tracks.findIndex(t => `track-${t.id}` === overId)
+      if (fromIndex !== -1 && toIndex !== -1 && fromIndex !== toIndex) reorderTracks(fromIndex, toIndex)
       return
     }
 
-    // Clip dropped onto a different track's clip zone → move clip
     if (kind === 'clip') {
       const fromTrackId = active.data.current?.trackId
-      const clipId = active.data.current?.clipId
-      const toTrackId = overId.replace('track-clips-', '')
-      if (fromTrackId && clipId && toTrackId && fromTrackId !== toTrackId) {
-        moveClip(fromTrackId, toTrackId, clipId)
-      }
+      const clipId      = active.data.current?.clipId
+      const toTrackId   = overId.replace('track-clips-', '')
+      if (fromTrackId && clipId && toTrackId && fromTrackId !== toTrackId) moveClip(fromTrackId, toTrackId, clipId)
     }
   }
 
@@ -87,6 +79,7 @@ export default function Home() {
           rackOpen={rackOpen}
           onToggleRack={() => setRackOpen(v => !v)}
         />
+        <TransportBar />
         <div className="flex flex-1 overflow-hidden min-h-0">
           <BrowserPanel />
           <div className="flex flex-col flex-1 overflow-hidden min-h-0">
