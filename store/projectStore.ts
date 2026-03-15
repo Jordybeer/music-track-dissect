@@ -52,15 +52,32 @@ export interface SectionMarker {
   color: string
 }
 
+// Ableton-style zoom levels: label → barWidth in px
+export const ZOOM_LEVELS = [
+  { label: '1/16', px: 8 },
+  { label: '1/8',  px: 12 },
+  { label: '1/4',  px: 18 },
+  { label: '1/2',  px: 26 },
+  { label: '1',    px: 36 },
+  { label: '2',    px: 56 },
+  { label: '4',    px: 96 },
+] as const
+
+export type ZoomLabel = typeof ZOOM_LEVELS[number]['label']
+
+export const HEADER_W = 160
+
 export interface ProjectState {
   bpm: number
   bars: number
+  barWidth: number
   tracks: Track[]
   markers: SectionMarker[]
   selectedTrackId: string | null
   selectedClipId: string | null
   setBpm: (bpm: number) => void
   setBars: (bars: number) => void
+  setBarWidth: (px: number) => void
   addTrack: (type: TrackType, groupId?: string | null) => void
   removeTrack: (id: string) => void
   reorderTracks: (from: number, to: number) => void
@@ -108,6 +125,7 @@ export const useProjectStore = create<ProjectState>()(
       (set, get) => ({
         bpm: 128,
         bars: 32,
+        barWidth: 36, // default = '1 bar'
         tracks: [],
         markers: [],
         selectedTrackId: null,
@@ -115,6 +133,7 @@ export const useProjectStore = create<ProjectState>()(
 
         setBpm: (bpm) => set({ bpm }),
         setBars: (bars) => set({ bars }),
+        setBarWidth: (barWidth) => set({ barWidth }),
 
         addTrack: (type, groupId = null) => set((s) => ({
           tracks: [...s.tracks, {
@@ -275,19 +294,16 @@ export const useProjectStore = create<ProjectState>()(
             set({
               bpm: data.bpm ?? 128,
               bars: data.bars ?? 32,
-              tracks: (data.tracks ?? []).map((t: Track) => {
-                const track: Track = {
-                  ...t,
-                  groupId: t.groupId ?? null,
-                  collapsed: t.collapsed ?? false,
-                  clips: (t.clips ?? []).map((c: Clip) => ({
-                    ...c,
-                    steps: c.steps?.length === 16 ? c.steps : makeSteps(),
-                    stepRows: c.stepRows ?? 1,
-                  })),
-                }
-                return track
-              }),
+              tracks: (data.tracks ?? []).map((t: Track) => ({
+                ...t,
+                groupId: t.groupId ?? null,
+                collapsed: t.collapsed ?? false,
+                clips: (t.clips ?? []).map((c: Clip) => ({
+                  ...c,
+                  steps: c.steps?.length === 16 ? c.steps : makeSteps(),
+                  stepRows: c.stepRows ?? 1,
+                })),
+              })),
               markers: data.markers ?? [],
               selectedTrackId: null,
               selectedClipId: null,
