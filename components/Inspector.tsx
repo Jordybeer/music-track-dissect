@@ -1,6 +1,8 @@
 'use client'
 
-import { useProjectStore, makeSteps } from '@/store/projectStore'
+import { useRef } from 'react'
+import { useProjectStore, makeSteps, SynthType } from '@/store/projectStore'
+import { storeSample } from '@/hooks/useAudioEngine'
 import StepEditor from './StepEditor'
 
 const KEYS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
@@ -10,6 +12,15 @@ const FX_DEVICES = [
   'EQ', 'Limiter', 'Auto Filter', 'Env Follower', 'Distortion',
   'Saturator', 'Redux', 'Spectrum', 'Utility', 'ABL3', 'Slippery Slope',
   'Sting 2', 'Gross Beat', 'OTT', 'Sidechain', 'LFO Tool',
+]
+
+const SYNTH_TYPES: { value: SynthType; label: string }[] = [
+  { value: 'sawtooth', label: 'Saw' },
+  { value: 'square',   label: 'Square' },
+  { value: 'sine',     label: 'Sine' },
+  { value: 'triangle', label: 'Triangle' },
+  { value: 'fmsine',   label: 'FM Sine' },
+  { value: 'amsine',   label: 'AM Sine' },
 ]
 
 function uid() { return Math.random().toString(36).slice(2, 10) }
@@ -22,6 +33,15 @@ export default function Inspector({ onClose }: Props) {
   const groups = tracks.filter(t => t.type === 'group')
   const selectedClip = track?.clips.find(c => c.id === selectedClipId)
   const isPatternTrack = track?.type === 'midi' || track?.type === 'drum'
+  const sampleRef = useRef<HTMLInputElement>(null)
+
+  async function handleSampleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file || !track) return
+    await storeSample(track.id, file)
+    updateTrack(track.id, { sampleName: file.name })
+    e.target.value = ''
+  }
 
   return (
     <div className="w-48 lg:w-56 shrink-0 bg-[#242424] border-l border-[#3a3a3a] flex flex-col overflow-hidden">
@@ -50,7 +70,77 @@ export default function Inspector({ onClose }: Props) {
       ) : (
         <div className="flex-1 overflow-y-auto">
 
-          {/* ── MOVE TO GROUP ── always visible for non-group tracks */}
+          {/* ── SOUND SOURCE ── midi synth picker + sample upload ─────────── */}
+          {(track.type === 'midi' || track.type === 'audio' || track.type === 'drum') && (
+            <div className="px-3 py-2.5 border-b border-[#3a3a3a] bg-[#1a1e1a] space-y-2">
+              <label className="text-[10px] text-[#22c55e] font-semibold uppercase tracking-wider block">Sound Source</label>
+
+              {/* Synth type — midi only */}
+              {track.type === 'midi' && (
+                <div>
+                  <label className="text-[10px] text-gray-500 block mb-1">Oscillator</label>
+                  <div className="flex flex-wrap gap-1">
+                    {SYNTH_TYPES.map(s => (
+                      <button
+                        key={s.value}
+                        onClick={() => updateTrack(track.id, { synthType: s.value })}
+                        className={`px-2 py-0.5 text-[10px] rounded border transition-colors touch-manipulation ${
+                          (track.synthType ?? 'sawtooth') === s.value
+                            ? 'bg-[#22c55e] text-black border-[#22c55e] font-bold'
+                            : 'bg-transparent text-gray-400 border-[#3a3a3a] hover:border-[#555]'
+                        }`}
+                      >
+                        {s.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Sample upload — audio + drum tracks */}
+              {(track.type === 'audio' || track.type === 'drum') && (
+                <div>
+                  <label className="text-[10px] text-gray-500 block mb-1">Sample</label>
+                  <input
+                    ref={sampleRef}
+                    type="file"
+                    accept="audio/*"
+                    className="hidden"
+                    onChange={handleSampleUpload}
+                  />
+                  <button
+                    onClick={() => sampleRef.current?.click()}
+                    className="w-full text-left px-2 py-1.5 bg-[#1a1a1a] border border-[#3a3a3a] hover:border-[#22c55e] rounded text-xs text-gray-300 transition-colors touch-manipulation"
+                  >
+                    {track.sampleName ? (
+                      <span className="text-[#22c55e] truncate block">✓ {track.sampleName}</span>
+                    ) : (
+                      <span className="text-gray-500">↑ Upload sample…</span>
+                    )}
+                  </button>
+                  {track.sampleName && (
+                    <button
+                      onClick={() => {
+                        updateTrack(track.id, { sampleName: '' })
+                        // Don't delete from sampleBufferMap here — engine will
+                        // fall back to synth on next play/sync automatically
+                      }}
+                      className="text-[9px] text-gray-600 hover:text-red-400 mt-0.5 touch-manipulation"
+                    >
+                      × clear sample
+                    </button>
+                  )}
+                  <p className="text-[9px] text-gray-600 mt-1 leading-tight">
+                    {track.type === 'drum'
+                      ? 'Each active step triggers this sample'
+                      : 'Replaces synth. Pitch-mapped to C3.'}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── MOVE TO GROUP ── */}
           {track.type !== 'group' && (
             <div className="px-3 py-2.5 border-b border-[#3a3a3a] bg-[#1e1e2e]">
               <label className="text-[10px] text-[#a855f7] font-semibold uppercase tracking-wider block mb-1.5">Move to Group</label>
@@ -72,7 +162,6 @@ export default function Inspector({ onClose }: Props) {
                     <button
                       onClick={() => setGroupId(track.id, null)}
                       className="text-[#a855f7] hover:text-white text-xs px-1.5 py-1.5 rounded border border-[#a855f7]/40 hover:border-[#a855f7] transition-colors touch-manipulation"
-                      title="Remove from group"
                     >↑</button>
                   )}
                 </div>
@@ -122,7 +211,7 @@ export default function Inspector({ onClose }: Props) {
             </div>
           )}
 
-          {/* ── Group children list ── */}
+          {/* ── Group children ── */}
           {track.type === 'group' && (
             <div className="p-3 border-b border-[#3a3a3a]">
               <label className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider block mb-1.5">

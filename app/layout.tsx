@@ -26,7 +26,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className="h-full">
-      <body className="h-full bg-[#1a1a1a] text-white safe-left safe-right safe-bottom">{children}</body>
+      {/* safe-bottom only: pads home indicator. Left/right NOT applied globally
+          to avoid right-side cutoff — the app fills edge-to-edge in landscape. */}
+      <body className="h-full bg-[#1a1a1a] text-white safe-bottom">{children}</body>
     </html>
   )
 }

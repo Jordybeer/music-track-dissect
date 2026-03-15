@@ -6,6 +6,9 @@ import { temporal } from 'zundo'
 
 export type TrackType = 'audio' | 'midi' | 'drum' | 'group' | 'return'
 
+// Oscillator types available for midi/audio synths
+export type SynthType = 'sawtooth' | 'square' | 'sine' | 'triangle' | 'fmsine' | 'amsine'
+
 export interface StepNote {
   active: boolean
   note: string
@@ -43,6 +46,9 @@ export interface Track {
   notes: string
   groupId: string | null
   collapsed: boolean
+  // Sound engine fields
+  synthType: SynthType       // oscillator/synth type for midi tracks
+  sampleName: string         // display name of uploaded sample (filename)
 }
 
 export interface SectionMarker {
@@ -52,7 +58,6 @@ export interface SectionMarker {
   color: string
 }
 
-// Ableton-style zoom levels: label → barWidth in px
 export const ZOOM_LEVELS = [
   { label: '1/16', px: 8 },
   { label: '1/8',  px: 12 },
@@ -125,7 +130,7 @@ export const useProjectStore = create<ProjectState>()(
       (set, get) => ({
         bpm: 128,
         bars: 32,
-        barWidth: 36, // default = '1 bar'
+        barWidth: 36,
         tracks: [],
         markers: [],
         selectedTrackId: null,
@@ -150,6 +155,8 @@ export const useProjectStore = create<ProjectState>()(
             notes: '',
             groupId: groupId ?? null,
             collapsed: false,
+            synthType: 'sawtooth',
+            sampleName: '',
           }]
         })),
 
@@ -298,6 +305,8 @@ export const useProjectStore = create<ProjectState>()(
                 ...t,
                 groupId: t.groupId ?? null,
                 collapsed: t.collapsed ?? false,
+                synthType: t.synthType ?? 'sawtooth',
+                sampleName: t.sampleName ?? '',
                 clips: (t.clips ?? []).map((c: Clip) => ({
                   ...c,
                   steps: c.steps?.length === 16 ? c.steps : makeSteps(),
