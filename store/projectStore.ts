@@ -5,14 +5,13 @@ import { persist } from 'zustand/middleware'
 import { temporal } from 'zundo'
 
 export type TrackType = 'audio' | 'midi' | 'drum' | 'group' | 'return'
-
-// Oscillator types available for midi/audio synths
 export type SynthType = 'sawtooth' | 'square' | 'sine' | 'triangle' | 'fmsine' | 'amsine'
 
 export interface StepNote {
   active: boolean
   note: string
   velocity: number
+  duration: string   // e.g. '32n', '16n', '8n', '4n', '2n', '1m'
 }
 
 export interface Clip {
@@ -46,9 +45,8 @@ export interface Track {
   notes: string
   groupId: string | null
   collapsed: boolean
-  // Sound engine fields
-  synthType: SynthType       // oscillator/synth type for midi tracks
-  sampleName: string         // display name of uploaded sample (filename)
+  synthType: SynthType
+  sampleName: string
 }
 
 export interface SectionMarker {
@@ -69,7 +67,6 @@ export const ZOOM_LEVELS = [
 ] as const
 
 export type ZoomLabel = typeof ZOOM_LEVELS[number]['label']
-
 export const HEADER_W = 160
 
 export interface ProjectState {
@@ -117,7 +114,12 @@ const trackColors: Record<TrackType, string> = {
 }
 
 export function makeSteps(count = 16): StepNote[] {
-  return Array.from({ length: count }, () => ({ active: false, note: 'C3', velocity: 100 }))
+  return Array.from({ length: count }, () => ({
+    active: false,
+    note: 'C3',
+    velocity: 100,
+    duration: '16n',
+  }))
 }
 
 export function uid() {
@@ -256,11 +258,8 @@ export const useProjectStore = create<ProjectState>()(
 
         deleteSelected: () => {
           const { selectedTrackId, selectedClipId, removeTrack, removeClip } = get()
-          if (selectedClipId && selectedTrackId) {
-            removeClip(selectedTrackId, selectedClipId)
-          } else if (selectedTrackId) {
-            removeTrack(selectedTrackId)
-          }
+          if (selectedClipId && selectedTrackId) removeClip(selectedTrackId, selectedClipId)
+          else if (selectedTrackId) removeTrack(selectedTrackId)
         },
 
         addFX: (trackId, device) => set((s) => ({
@@ -309,7 +308,9 @@ export const useProjectStore = create<ProjectState>()(
                 sampleName: t.sampleName ?? '',
                 clips: (t.clips ?? []).map((c: Clip) => ({
                   ...c,
-                  steps: c.steps?.length === 16 ? c.steps : makeSteps(),
+                  steps: c.steps?.length === 16
+                    ? c.steps.map(s => ({ duration: '16n', ...s }))
+                    : makeSteps(),
                   stepRows: c.stepRows ?? 1,
                 })),
               })),

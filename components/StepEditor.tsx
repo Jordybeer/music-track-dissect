@@ -10,7 +10,17 @@ const NOTES = [
   'C5','C#5','D5','D#5','E5','F5','F#5','G5','G#5','A5',
 ]
 
-// 2 rows of 8 for touch friendliness
+const DURATIONS = [
+  { value: '32n', label: '1/32' },
+  { value: '16n', label: '1/16' },
+  { value: '8n',  label: '1/8'  },
+  { value: '4n',  label: '1/4'  },
+  { value: '2n',  label: '1/2'  },
+  { value: '1m',  label: '1 bar' },
+  { value: '2m',  label: '2 bar' },
+  { value: '4m',  label: '4 bar' },
+]
+
 const ROW1 = [0,1,2,3,4,5,6,7]
 const ROW2 = [8,9,10,11,12,13,14,15]
 const BEAT_LABELS: Record<number, string> = { 0:'1', 4:'2', 8:'3', 12:'4' }
@@ -28,7 +38,7 @@ export default function StepEditor({ clip, trackId, color, isDrum }: Props) {
 
   const steps: StepNote[] = clip.steps?.length === 16
     ? clip.steps
-    : Array.from({ length: 16 }, (_, i) => clip.steps?.[i] ?? { active: false, note: 'C3', velocity: 100 })
+    : Array.from({ length: 16 }, (_, i) => clip.steps?.[i] ?? { active: false, note: 'C3', velocity: 100, duration: '16n' })
 
   function toggleStep(i: number) {
     updateStep(trackId, clip.id, i, { active: !steps[i].active })
@@ -41,6 +51,10 @@ export default function StepEditor({ clip, trackId, color, isDrum }: Props) {
     const step = steps[i]
     const isSel = activeStep === i
     const beatLabel = BEAT_LABELS[i]
+    // Show duration hint on active steps
+    const durLabel = step.active && step.duration && step.duration !== '16n'
+      ? DURATIONS.find(d => d.value === step.duration)?.label ?? step.duration
+      : null
     return (
       <div className="flex-1 flex flex-col items-center gap-0.5">
         {beatLabel
@@ -53,7 +67,6 @@ export default function StepEditor({ clip, trackId, color, isDrum }: Props) {
             w-full rounded transition-all duration-100 touch-manipulation select-none
             ${ step.active ? 'active:scale-90' : 'bg-[#1a1a1a] hover:bg-[#2a2a2a] active:bg-[#333]' }
             ${ isSel ? 'ring-1 ring-white' : '' }
-            ${ step.active ? 'animate-step-on' : '' }
           `}
           style={{
             height: 36,
@@ -62,11 +75,10 @@ export default function StepEditor({ clip, trackId, color, isDrum }: Props) {
             boxShadow: step.active ? `0 0 6px ${color}66` : undefined,
           }}
         >
-          <span className="text-[9px] font-bold text-white/90">
-            {step.active && !isDrum ? step.note.replace(/[0-9]/g, '') : ''}
+          <span className="text-[9px] font-bold text-white/90 block truncate px-0.5">
+            {durLabel ?? (step.active && !isDrum ? step.note.replace(/[0-9]/g, '') : '')}
           </span>
         </button>
-        {/* Velocity bar */}
         <div className="w-full h-1.5 bg-[#1a1a1a] rounded-sm overflow-hidden">
           {step.active && (
             <div
@@ -81,36 +93,52 @@ export default function StepEditor({ clip, trackId, color, isDrum }: Props) {
 
   return (
     <div className="space-y-2">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <span className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">16-Step Pattern</span>
         <div className="flex items-center gap-2">
           <span className="text-[10px] text-gray-600">{activeCount}/16</span>
           <button
             onPointerDown={() => updateClip(trackId, clip.id, { steps: steps.map(s => ({ ...s, active: false })) })}
-            className="text-[10px] text-gray-600 hover:text-red-400 active:text-red-300 touch-manipulation px-1 py-1"
+            className="text-[10px] text-gray-600 hover:text-red-400 touch-manipulation px-1 py-1"
           >clear</button>
         </div>
       </div>
 
-      {/* Row 1: steps 1–8 */}
       <div className="flex gap-1">
         {ROW1.map(i => <StepButton key={i} i={i} />)}
       </div>
-
-      {/* Row 2: steps 9–16 */}
       <div className="flex gap-1">
         {ROW2.map(i => <StepButton key={i} i={i} />)}
       </div>
 
-      {/* Selected step detail */}
       {activeStep !== null && (
-        <div className="bg-[#1a1a1a] border border-[#3a3a3a] rounded p-3 space-y-2 animate-fade-in">
+        <div className="bg-[#1a1a1a] border border-[#3a3a3a] rounded p-3 space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-[11px] text-gray-400">Step {activeStep + 1}</span>
             <button onClick={() => setActiveStep(null)} className="text-gray-600 hover:text-white p-1 touch-manipulation">×</button>
           </div>
 
+          {/* Duration */}
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-gray-500 w-10 shrink-0">Len</span>
+            <div className="flex flex-wrap gap-1">
+              {DURATIONS.map(d => (
+                <button
+                  key={d.value}
+                  onPointerDown={() => updateStep(trackId, clip.id, activeStep, { duration: d.value })}
+                  className={`px-1.5 py-0.5 text-[10px] rounded border transition-colors touch-manipulation ${
+                    (steps[activeStep].duration ?? '16n') === d.value
+                      ? 'border-[#e8a020] bg-[#2a2a1a] text-[#e8a020] font-bold'
+                      : 'border-[#3a3a3a] text-gray-500 hover:border-[#555]'
+                  }`}
+                >
+                  {d.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Note (non-drum only) */}
           {!isDrum && (
             <div className="flex items-center gap-2">
               <span className="text-[11px] text-gray-500 w-10 shrink-0">Note</span>
@@ -124,6 +152,7 @@ export default function StepEditor({ clip, trackId, color, isDrum }: Props) {
             </div>
           )}
 
+          {/* Velocity */}
           <div className="flex items-center gap-2">
             <span className="text-[11px] text-gray-500 w-10 shrink-0">Vel</span>
             <input
