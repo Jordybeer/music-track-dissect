@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useCallback, useEffect } from 'react'
+import { useRef, useCallback } from 'react'
 import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { useProjectStore, HEADER_W } from '@/store/projectStore'
@@ -12,7 +12,6 @@ import WaveformTrack from './WaveformTrack'
 export default function Timeline() {
   const { tracks, barWidth, bars, bpm, reorderTracks } = useProjectStore()
   const bodyRef = useRef<HTMLDivElement>(null)
-  const headerScrollRef = useRef<HTMLDivElement>(null)
   const syncing = useRef(false)
 
   const sensors = useSensors(
@@ -21,10 +20,7 @@ export default function Timeline() {
   )
 
   const onBodyScroll = useCallback(() => {
-    if (syncing.current || !bodyRef.current || !headerScrollRef.current) return
-    syncing.current = true
-    headerScrollRef.current.scrollLeft = bodyRef.current.scrollLeft
-    syncing.current = false
+    if (syncing.current || !bodyRef.current) return
   }, [])
 
   function handleDragEnd(event: any) {
@@ -39,20 +35,22 @@ export default function Timeline() {
 
   return (
     <div className="flex flex-col flex-1 overflow-hidden min-h-0">
-      {/* Section ruler */}
       <SectionRuler barWidth={barWidth} headerW={HEADER_W} bars={bars} bodyRef={bodyRef} />
-
-      {/* Waveform reference track */}
       <WaveformTrack barWidth={barWidth} bars={bars} bpm={bpm} />
 
-      {/* Track list */}
       <div ref={bodyRef} className="flex-1 overflow-auto" onScroll={onBodyScroll}>
         <div style={{ minWidth: HEADER_W + bars * barWidth }}>
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <SortableContext items={topTracks.map(t => `track-${t.id}`)} strategy={verticalListSortingStrategy}>
               {topTracks.map(track =>
                 track.type === 'group' ? (
-                  <GroupRow key={track.id} group={track} barWidth={barWidth} headerW={HEADER_W} />
+                  <GroupRow
+                    key={track.id}
+                    group={track}
+                    children={tracks.filter(t => t.groupId === track.id)}
+                    barWidth={barWidth}
+                    headerW={HEADER_W}
+                  />
                 ) : (
                   <TrackRow key={track.id} track={track} barWidth={barWidth} headerW={HEADER_W} />
                 )
