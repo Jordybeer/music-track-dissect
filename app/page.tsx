@@ -5,7 +5,7 @@ import {
   PointerSensor, TouchSensor, useSensor, useSensors,
   DragOverlay, closestCenter,
 } from '@dnd-kit/core'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import BrowserPanel from '@/components/BrowserPanel'
 import Timeline from '@/components/Timeline'
 import Inspector from '@/components/Inspector'
@@ -19,10 +19,16 @@ export default function Home() {
   const { reorderTracks, tracks, moveClip, setGroupId } = useProjectStore()
   const [activeId, setActiveId] = useState<string | null>(null)
   const [activeKind, setActiveKind] = useState<string | null>(null)
-  const [inspectorOpen, setInspectorOpen] = useState(true)
+  // Inspector open by default on desktop (lg+), closed on mobile
+  const [inspectorOpen, setInspectorOpen] = useState(false)
   const [rackOpen, setRackOpen] = useState(true)
 
   useKeyboard()
+
+  // Open inspector by default on desktop
+  useEffect(() => {
+    if (window.innerWidth >= 1024) setInspectorOpen(true)
+  }, [])
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -39,24 +45,20 @@ export default function Home() {
     setActiveId(null)
     setActiveKind(null)
     if (!over) return
-
     const kind = active.data.current?.kind
     const overId = String(over.id)
-
     if (kind === 'track-row' && overId.startsWith('group-drop-')) {
       const groupId = overId.replace('group-drop-', '')
       const trackId = active.data.current?.trackId
       if (trackId && trackId !== groupId) setGroupId(trackId, groupId)
       return
     }
-
     if (kind === 'track-row') {
       const fromIndex = tracks.findIndex(t => `track-${t.id}` === String(active.id))
       const toIndex   = tracks.findIndex(t => `track-${t.id}` === overId)
       if (fromIndex !== -1 && toIndex !== -1 && fromIndex !== toIndex) reorderTracks(fromIndex, toIndex)
       return
     }
-
     if (kind === 'clip') {
       const fromTrackId = active.data.current?.trackId
       const clipId      = active.data.current?.clipId

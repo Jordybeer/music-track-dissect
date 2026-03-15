@@ -14,15 +14,16 @@ interface Props {
 }
 
 export default function SectionRuler({ barWidth, headerW, bars, bodyRef }: Props) {
-  const { markers, addMarker, removeMarker } = useProjectStore()
+  const { markers, addMarker, removeMarker, updateMarker } = useProjectStore()
   const [adding, setAdding] = useState(false)
   const [newBar, setNewBar] = useState(1)
   const [newLabel, setNewLabel] = useState('Drop')
   const [newColor, setNewColor] = useState(SECTION_COLORS[0])
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editingLabel, setEditingLabel] = useState('')
   const rulerScrollRef = useRef<HTMLDivElement>(null)
   const syncingRef = useRef(false)
 
-  // Sync section ruler scroll with body
   const onRulerScroll = useCallback(() => {
     if (syncingRef.current || !rulerScrollRef.current || !bodyRef.current) return
     syncingRef.current = true
@@ -30,13 +31,8 @@ export default function SectionRuler({ barWidth, headerW, bars, bodyRef }: Props
     syncingRef.current = false
   }, [bodyRef])
 
-  // Sync from body to section ruler
   if (typeof window !== 'undefined' && bodyRef.current && rulerScrollRef.current) {
-    const body = bodyRef.current
-    const ruler = rulerScrollRef.current
-    if (!syncingRef.current) {
-      ruler.scrollLeft = body.scrollLeft
-    }
+    if (!syncingRef.current) rulerScrollRef.current.scrollLeft = bodyRef.current.scrollLeft
   }
 
   function handleAdd() {
@@ -44,22 +40,29 @@ export default function SectionRuler({ barWidth, headerW, bars, bodyRef }: Props
     setAdding(false)
   }
 
+  // Tap on ruler to add marker at that bar
+  function handleRulerTap(e: React.MouseEvent<HTMLDivElement>) {
+    if (e.target !== e.currentTarget) return
+    const rect = e.currentTarget.getBoundingClientRect()
+    const bar = Math.max(1, Math.ceil((e.clientX - rect.left) / barWidth))
+    setNewBar(bar)
+    setAdding(true)
+  }
+
   return (
-    <div className="flex shrink-0 h-8 bg-[#1e1e1e] border-b border-[#3a3a3a] overflow-hidden">
-      {/* Fixed header button */}
+    <div className="flex shrink-0 border-b border-[#3a3a3a] overflow-hidden" style={{ height: 28 }}>
+      {/* Fixed header */}
       <div
-        className="shrink-0 flex items-center justify-center border-r border-[#3a3a3a] relative"
+        className="shrink-0 flex items-center justify-center border-r border-[#3a3a3a] bg-[#1e1e1e] relative"
         style={{ width: headerW }}
       >
         <button
           onClick={() => setAdding(!adding)}
-          className="text-[10px] text-gray-500 hover:text-[#e8a020] px-2 transition-colors"
-        >
-          + Section
-        </button>
+          className="text-[10px] text-gray-500 hover:text-[#e8a020] px-2 transition-colors touch-manipulation"
+        >+ Section</button>
 
         {adding && (
-          <div className="absolute top-8 left-0 z-30 bg-[#2a2a2a] border border-[#3a3a3a] rounded p-3 flex gap-2 items-center shadow-2xl flex-wrap w-72">
+          <div className="absolute top-7 left-0 z-30 bg-[#2a2a2a] border border-[#3a3a3a] rounded p-3 flex gap-2 items-center shadow-2xl flex-wrap w-72">
             <select
               className="bg-[#1a1a1a] border border-[#3a3a3a] rounded px-1 py-1 text-xs text-white"
               value={newLabel}
@@ -68,42 +71,60 @@ export default function SectionRuler({ barWidth, headerW, bars, bodyRef }: Props
               {SECTION_LABELS.map(l => <option key={l}>{l}</option>)}
             </select>
             <input
-              className="bg-[#1a1a1a] border border-[#3a3a3a] rounded px-1 py-1 text-xs text-white w-20"
-              placeholder="Custom label"
+              className="bg-[#1a1a1a] border border-[#3a3a3a] rounded px-1 py-1 text-xs text-white w-24"
+              placeholder="Custom…"
               value={newLabel}
               onChange={(e) => setNewLabel(e.target.value)}
             />
             <div className="flex items-center gap-1">
               <span className="text-xs text-gray-400">Bar</span>
-              <input
-                type="number" min={1} max={bars} value={newBar}
+              <input type="number" min={1} max={bars} value={newBar}
                 onChange={(e) => setNewBar(Number(e.target.value))}
-                className="w-12 bg-[#1a1a1a] border border-[#3a3a3a] rounded px-1 py-1 text-xs text-white text-center"
-              />
+                className="w-12 bg-[#1a1a1a] border border-[#3a3a3a] rounded px-1 py-1 text-xs text-white text-center" />
             </div>
             <div className="flex gap-1">
               {SECTION_COLORS.map(c => (
-                <button
-                  key={c}
-                  onClick={() => setNewColor(c)}
+                <button key={c} onClick={() => setNewColor(c)}
                   className={`w-4 h-4 rounded-full border-2 ${newColor === c ? 'border-white' : 'border-transparent'}`}
-                  style={{ background: c }}
-                />
+                  style={{ background: c }} />
               ))}
             </div>
-            <button onClick={handleAdd} className="bg-[#e8a020] text-black text-xs font-bold px-2 py-1 rounded">Add</button>
-            <button onClick={() => setAdding(false)} className="text-gray-400 hover:text-white text-xs">✕</button>
+            <button onClick={handleAdd} className="bg-[#e8a020] text-black text-xs font-bold px-2 py-1 rounded touch-manipulation">Add</button>
+            <button onClick={() => setAdding(false)} className="text-gray-400 hover:text-white text-xs touch-manipulation">✕</button>
           </div>
         )}
       </div>
 
-      {/* Scrollable marker area */}
+      {/* Scrollable ruler — tap to place marker */}
       <div
         ref={rulerScrollRef}
-        className="flex-1 overflow-x-hidden relative"
+        className="flex-1 overflow-x-hidden relative bg-[#171717] cursor-crosshair"
         onScroll={onRulerScroll}
+        onClick={handleRulerTap}
       >
         <div className="relative h-full" style={{ width: bars * barWidth }}>
+          {/* Bar tick marks */}
+          {Array.from({ length: bars }, (_, i) => (
+            <div
+              key={i}
+              className="absolute top-0 h-full pointer-events-none"
+              style={{ left: i * barWidth, width: barWidth }}
+            >
+              {/* Major beat lines every 4 bars */}
+              <div
+                className="absolute left-0 top-0 h-full"
+                style={{ width: 1, background: i % 4 === 0 ? '#3a3a3a' : '#242424' }}
+              />
+              {i % 4 === 0 && (
+                <span
+                  className="absolute top-0.5 left-0.5 text-[8px] text-gray-600 leading-none select-none pointer-events-none"
+                  style={{ fontSize: 8 }}
+                >{i + 1}</span>
+              )}
+            </div>
+          ))}
+
+          {/* Section markers */}
           {markers.map((marker) => (
             <div
               key={marker.id}
@@ -111,18 +132,33 @@ export default function SectionRuler({ barWidth, headerW, bars, bodyRef }: Props
               style={{ left: (marker.startBar - 1) * barWidth }}
             >
               <div className="h-full w-px" style={{ background: marker.color }} />
-              <div
-                className="px-1.5 py-0.5 text-[10px] font-bold rounded-r whitespace-nowrap select-none"
-                style={{ background: marker.color + '33', color: marker.color, borderLeft: `2px solid ${marker.color}` }}
-              >
-                {marker.label}
-                <button
-                  onClick={() => removeMarker(marker.id)}
-                  className="ml-1 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-400"
+              {editingId === marker.id ? (
+                <input
+                  autoFocus
+                  className="px-1 text-[10px] font-bold rounded-r bg-[#2a2a2a] border border-white/30 text-white outline-none w-20"
+                  value={editingLabel}
+                  onChange={(e) => setEditingLabel(e.target.value)}
+                  onBlur={() => { updateMarker(marker.id, { label: editingLabel }); setEditingId(null) }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') { updateMarker(marker.id, { label: editingLabel }); setEditingId(null) }
+                    if (e.key === 'Escape') setEditingId(null)
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                />
+              ) : (
+                <div
+                  className="px-1.5 py-0.5 text-[10px] font-bold rounded-r whitespace-nowrap select-none cursor-pointer"
+                  style={{ background: marker.color + '33', color: marker.color, borderLeft: `2px solid ${marker.color}` }}
+                  onDoubleClick={(e) => { e.stopPropagation(); setEditingId(marker.id); setEditingLabel(marker.label) }}
+                  onClick={(e) => e.stopPropagation()}
                 >
-                  ×
-                </button>
-              </div>
+                  {marker.label}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); removeMarker(marker.id) }}
+                    className="ml-1 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-400 touch-manipulation"
+                  >×</button>
+                </div>
+              )}
             </div>
           ))}
         </div>
