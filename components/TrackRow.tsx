@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
-import { useDroppable, useDraggable } from '@dnd-kit/core'
+import { useDroppable } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
 import { Track, Clip, useProjectStore, uid, makeSteps } from '@/store/projectStore'
 
@@ -20,7 +20,6 @@ interface Props {
 
 interface CtxMenu { clipId: string; x: number; y: number }
 
-// Separate draggable clip component so hooks are called unconditionally
 function DraggableClip({
   clip, track, barWidth, isSelected,
   onSelect, onDoubleClick, onCtxMenu,
@@ -39,46 +38,102 @@ function DraggableClip({
   onLabelSubmit: () => void
   onLabelKeyDown: (e: React.KeyboardEvent) => void
 }) {
+  const { updateClip } = useProjectStore()
   const isPatternTrack = track.type === 'midi' || track.type === 'drum'
   const activeSteps = clip.steps?.filter(s => s.active).length ?? 0
 
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
-    id: `clip-${clip.id}`,
-    data: { kind: 'clip', clipId: clip.id, trackId: track.id },
-  })
+  // --- Drag state ---
+  const dragState = useRef<{ startX: number; origBar: number; dragging: boolean } | null>(null)
+  const [dragOffset, setDragOffset] = useState(0) // px offset while dragging
+  const isDragging = useRef(false)
 
-  // Long-press with distance threshold (avoids iOS micro-jitter cancel)
+  // --- Resize state ---
+  const resizeState = useRef<{ startX: number; origLen: number } | null>(null)
+  const [resizeOffset, setResizeOffset] = useState(0)
+  const isResizing = useRef(false)
+
+  // --- Long press for context menu ---
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const touchStart = useRef<{ x: number; y: number } | null>(null)
+  const touchOrigin = useRef<{ x: number; y: number } | null>(null)
 
-  const onTouchStart = useCallback((e: React.TouchEvent) => {
-    touchStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }
+  // Drag — pointer events on the clip body
+  function onDragPointerDown(e: React.PointerEvent) {
+    if (isResizing.current) return
+    e.currentTarget.setPointerCapture(e.pointerId)
+    dragState.current = { startX: e.clientX, origBar: clip.startBar, dragging: false }
+    setDragOffset(0)
+  }
+  function onDragPointerMove(e: React.PointerEvent) {
+    if (!dragState.current) return
+    const dx = e.clientX - dragState.current.startX
+    if (!dragState.current.dragging && Math.abs(dx) > 4) dragState.current.dragging = true
+    if (dragState.current.dragging) setDragOffset(dx)
+  }
+  function onDragPointerUp(e: React.PointerEvent) {
+    if (!dragState.current) return
+    if (dragState.current.dragging) {
+      const dx = e.clientX - dragState.current.startX
+      const barDelta = Math.round(dx / barWidth)
+      const newStart = Math.max(1, dragState.current.origBar + barDelta)
+      updateClip(track.id, clip.id, { startBar: newStart })
+    } else {
+      onSelect()
+    }
+    dragState.current = null
+    setDragOffset(0)
+  }
+
+  // Resize — separate pointer events on the right-edge handle
+  function onResizePointerDown(e: React.PointerEvent) {
+    e.stopPropagation()
+    isResizing.current = true
+    e.currentTarget.setPointerCapture(e.pointerId)
+    resizeState.current = { startX: e.clientX, origLen: clip.lengthBars }
+    setResizeOffset(0)
+  }
+  function onResizePointerMove(e: React.PointerEvent) {
+    if (!resizeState.current) return
+    const dx = e.clientX - resizeState.current.startX
+    setResizeOffset(dx)
+  }
+  function onResizePointerUp(e: React.PointerEvent) {
+    if (!resizeState.current) return
+    const dx = e.clientX - resizeState.current.startX
+    const barDelta = Math.round(dx / barWidth)
+    const newLen = Math.max(1, resizeState.current.origLen + barDelta)
+    updateClip(track.id, clip.id, { lengthBars: newLen })
+    resizeState.current = null
+    isResizing.current = false
+    setResizeOffset(0)
+  }
+
+  // Long-press touch for context menu (with jitter threshold)
+  function onTouchStart(e: React.TouchEvent) {
+    touchOrigin.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }
     longPressTimer.current = setTimeout(() => {
-      if (touchStart.current) onCtxMenu(touchStart.current.x, touchStart.current.y)
+      if (touchOrigin.current) onCtxMenu(touchOrigin.current.x, touchOrigin.current.y)
     }, 600)
-  }, [onCtxMenu])
-
-  const onTouchMove = useCallback((e: React.TouchEvent) => {
-    if (!touchStart.current) return
-    const dx = Math.abs(e.touches[0].clientX - touchStart.current.x)
-    const dy = Math.abs(e.touches[0].clientY - touchStart.current.y)
-    // Only cancel if finger moved more than 10px — ignores micro-jitter
+  }
+  function onTouchMove(e: React.TouchEvent) {
+    if (!touchOrigin.current) return
+    const dx = Math.abs(e.touches[0].clientX - touchOrigin.current.x)
+    const dy = Math.abs(e.touches[0].clientY - touchOrigin.current.y)
     if (dx > 10 || dy > 10) {
       if (longPressTimer.current) clearTimeout(longPressTimer.current)
-      touchStart.current = null
+      touchOrigin.current = null
     }
-  }, [])
-
-  const onTouchEnd = useCallback(() => {
+  }
+  function onTouchEnd() {
     if (longPressTimer.current) clearTimeout(longPressTimer.current)
-    touchStart.current = null
-  }, [])
+    touchOrigin.current = null
+  }
 
-  const dragStyle = transform ? {
-    transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,
-  } : undefined
+  const isActiveDrag = dragOffset !== 0
+  const isActiveResize = resizeOffset !== 0
+  const displayLeft = (clip.startBar - 1) * barWidth + dragOffset
+  const displayWidth = Math.max(barWidth, clip.lengthBars * barWidth - 2 + resizeOffset)
 
-  // MIDI/drum step stripe rendering
+  // MIDI stripes
   function renderStripes() {
     if (!isPatternTrack || !clip.steps || clip.steps.length === 0) return null
     const totalW = clip.lengthBars * barWidth - 2
@@ -87,15 +142,8 @@ function DraggableClip({
       <div className="absolute inset-0 pointer-events-none rounded overflow-hidden">
         {clip.steps.map((step, i) =>
           step.active ? (
-            <div
-              key={i}
-              className="absolute bottom-0 rounded-sm"
-              style={{
-                left: i * stepW + 1,
-                width: Math.max(stepW - 2, 1),
-                height: '40%',
-                background: 'rgba(255,255,255,0.35)',
-              }}
+            <div key={i} className="absolute bottom-0 rounded-sm"
+              style={{ left: i * stepW + 1, width: Math.max(stepW - 2, 1), height: '40%', background: 'rgba(255,255,255,0.35)' }}
             />
           ) : null
         )}
@@ -105,56 +153,61 @@ function DraggableClip({
 
   return (
     <div
-      ref={setNodeRef}
-      {...attributes}
-      {...listeners}
-      className={`absolute top-1 rounded text-xs flex flex-col justify-center px-2 font-medium overflow-hidden select-none cursor-grab active:cursor-grabbing touch-manipulation transition-all duration-100 ${
-        isDragging ? 'opacity-30 z-50' :
-        isSelected ? 'ring-2 ring-white brightness-110' : 'hover:brightness-110 active:scale-[0.98]'
+      className={`absolute top-1 rounded text-xs font-medium overflow-visible select-none touch-manipulation ${
+        isActiveDrag || isActiveResize ? 'z-50 shadow-2xl brightness-125' :
+        isSelected ? 'ring-2 ring-white brightness-110 z-10' : 'hover:brightness-110'
       }`}
       style={{
-        left: (clip.startBar - 1) * barWidth,
-        width: clip.lengthBars * barWidth - 2,
+        left: displayLeft,
+        width: displayWidth,
         height: 40,
         background: clip.color + 'cc',
         border: `1px solid ${clip.color}`,
-        ...dragStyle,
+        cursor: isActiveDrag ? 'grabbing' : 'grab',
+        transition: isActiveDrag || isActiveResize ? 'none' : 'left 0.05s, width 0.05s',
       }}
-      onClick={(e) => {
-        e.stopPropagation()
-        onSelect()
-      }}
-      onDoubleClick={(e) => {
-        e.stopPropagation()
-        onDoubleClick()
-      }}
-      onContextMenu={(e) => {
-        e.preventDefault()
-        e.stopPropagation()
-        onCtxMenu(e.clientX, e.clientY)
-      }}
+      onPointerDown={onDragPointerDown}
+      onPointerMove={onDragPointerMove}
+      onPointerUp={onDragPointerUp}
+      onPointerCancel={() => { dragState.current = null; setDragOffset(0) }}
+      onDoubleClick={(e) => { e.stopPropagation(); onDoubleClick() }}
+      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onCtxMenu(e.clientX, e.clientY) }}
       onTouchStart={onTouchStart}
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
     >
       {renderStripes()}
-      <div className="relative z-10">
+
+      {/* Label */}
+      <div className="relative z-10 px-2 h-full flex flex-col justify-center pointer-events-none">
         {isEditing ? (
           <input
             autoFocus
-            className="bg-transparent outline-none text-white text-xs w-full"
+            className="bg-transparent outline-none text-white text-xs w-full pointer-events-auto"
             value={editingLabel}
             onChange={(e) => onLabelChange(e.target.value)}
             onBlur={onLabelSubmit}
             onKeyDown={onLabelKeyDown}
-            onClick={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
           />
         ) : (
-          <span className="truncate leading-tight block">{clip.label}</span>
+          <span className="truncate leading-tight block text-white">{clip.label}</span>
         )}
         {isPatternTrack && activeSteps > 0 && !isEditing && (
           <span className="text-[8px] opacity-70 leading-tight block">{activeSteps}/16</span>
         )}
+      </div>
+
+      {/* Resize handle — right edge */}
+      <div
+        className="absolute right-0 top-0 bottom-0 w-3 cursor-ew-resize flex items-center justify-center group"
+        onPointerDown={onResizePointerDown}
+        onPointerMove={onResizePointerMove}
+        onPointerUp={onResizePointerUp}
+        onPointerCancel={() => { resizeState.current = null; isResizing.current = false; setResizeOffset(0) }}
+        onDoubleClick={(e) => e.stopPropagation()}
+      >
+        <div className="w-0.5 h-4 rounded-full bg-white/30 group-hover:bg-white/70 transition-colors" />
       </div>
     </div>
   )
@@ -219,21 +272,18 @@ export default function TrackRow({ track, barWidth, headerW, indent = 0 }: Props
         >
           ⠿
         </div>
-
         <button
           onClick={(e) => { e.stopPropagation(); setShowColorPicker(v => !v) }}
           className="w-4 h-4 rounded-full shrink-0 border border-black/30 hover:scale-125 active:scale-110 transition-transform touch-manipulation"
           style={{ background: track.color }}
         />
-
         {showColorPicker && (
           <div
             className="absolute top-10 left-1 z-50 bg-[#2a2a2a] border border-[#3a3a3a] rounded p-2 flex flex-wrap gap-1.5 w-32 shadow-2xl animate-fade-in"
             onClick={(e) => e.stopPropagation()}
           >
             {TRACK_COLORS.map(c => (
-              <button
-                key={c}
+              <button key={c}
                 onClick={() => { updateTrack(track.id, { color: c }); setShowColorPicker(false) }}
                 className={`w-6 h-6 rounded-full border-2 hover:scale-110 active:scale-95 transition-transform touch-manipulation ${
                   track.color === c ? 'border-white' : 'border-transparent'
@@ -243,27 +293,19 @@ export default function TrackRow({ track, barWidth, headerW, indent = 0 }: Props
             ))}
           </div>
         )}
-
         <span className="text-xs font-medium truncate flex-1 select-none">{track.name}</span>
-
         {track.groupId && (
-          <button
-            onClick={(e) => { e.stopPropagation(); setGroupId(track.id, null) }}
-            className="text-[#a855f7] hover:text-white p-2 shrink-0 touch-manipulation"
-          >↑</button>
+          <button onClick={(e) => { e.stopPropagation(); setGroupId(track.id, null) }}
+            className="text-[#a855f7] hover:text-white p-2 shrink-0 touch-manipulation">↑</button>
         )}
-        <button
-          onClick={(e) => { e.stopPropagation(); setIsAdding(!isAdding) }}
-          className="text-gray-500 hover:text-white active:text-[#e8a020] p-2 shrink-0 touch-manipulation text-base leading-none"
-        >+</button>
-        <button
-          onClick={(e) => { e.stopPropagation(); removeTrack(track.id) }}
-          className="text-gray-600 hover:text-red-400 active:text-red-300 p-2 shrink-0 touch-manipulation"
-        >×</button>
+        <button onClick={(e) => { e.stopPropagation(); setIsAdding(!isAdding) }}
+          className="text-gray-500 hover:text-white active:text-[#e8a020] p-2 shrink-0 touch-manipulation text-base leading-none">+</button>
+        <button onClick={(e) => { e.stopPropagation(); removeTrack(track.id) }}
+          className="text-gray-600 hover:text-red-400 active:text-red-300 p-2 shrink-0 touch-manipulation">×</button>
       </div>
 
       {/* Clip zone */}
-      <div ref={setDropRef} className="flex-1 relative min-h-[48px]" onClick={() => setCtxMenu(null)}>
+      <div ref={setDropRef} className="flex-1 relative min-h-[48px] overflow-visible" onClick={() => setCtxMenu(null)}>
         {track.clips.map((clip) => (
           <DraggableClip
             key={clip.id}
@@ -276,10 +318,7 @@ export default function TrackRow({ track, barWidth, headerW, indent = 0 }: Props
               selectClip(selectedClipId === clip.id ? null : clip.id)
               setCtxMenu(null)
             }}
-            onDoubleClick={() => {
-              setEditingClipId(clip.id)
-              setEditingLabel(clip.label)
-            }}
+            onDoubleClick={() => { setEditingClipId(clip.id); setEditingLabel(clip.label) }}
             onCtxMenu={(x, y) => setCtxMenu({ clipId: clip.id, x, y })}
             isEditing={editingClipId === clip.id}
             editingLabel={editingLabel}
@@ -289,10 +328,7 @@ export default function TrackRow({ track, barWidth, headerW, indent = 0 }: Props
               setEditingClipId(null)
             }}
             onLabelKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                if (editingLabel.trim()) updateClip(track.id, clip.id, { label: editingLabel.trim() })
-                setEditingClipId(null)
-              }
+              if (e.key === 'Enter') { if (editingLabel.trim()) updateClip(track.id, clip.id, { label: editingLabel.trim() }); setEditingClipId(null) }
               if (e.key === 'Escape') setEditingClipId(null)
             }}
           />
@@ -306,66 +342,52 @@ export default function TrackRow({ track, barWidth, headerW, indent = 0 }: Props
           style={{ top: ctxMenu.y, left: Math.min(ctxMenu.x, (typeof window !== 'undefined' ? window.innerWidth : 400) - 180) }}
           onClick={(e) => e.stopPropagation()}
         >
-          <button className="w-full text-left px-4 py-3 text-sm hover:bg-[#3a3a3a] active:bg-[#444] text-white flex justify-between touch-manipulation"
+          <button className="w-full text-left px-4 py-3 text-sm hover:bg-[#3a3a3a] text-white flex justify-between touch-manipulation"
             onClick={() => { duplicateClip(track.id, ctxMenu.clipId); setCtxMenu(null) }}>
             Duplicate <span className="text-gray-500 text-xs">D</span>
           </button>
-          <button className="w-full text-left px-4 py-3 text-sm hover:bg-[#3a3a3a] active:bg-[#444] text-white flex justify-between touch-manipulation"
-            onClick={() => {
-              const c = track.clips.find(c => c.id === ctxMenu.clipId)
-              if (c) { setEditingClipId(c.id); setEditingLabel(c.label) }
-              setCtxMenu(null)
-            }}>
+          <button className="w-full text-left px-4 py-3 text-sm hover:bg-[#3a3a3a] text-white flex justify-between touch-manipulation"
+            onClick={() => { const c = track.clips.find(c => c.id === ctxMenu.clipId); if (c) { setEditingClipId(c.id); setEditingLabel(c.label) } setCtxMenu(null) }}>
             Rename <span className="text-gray-500 text-xs">dbl-tap</span>
           </button>
           <div className="border-t border-[#3a3a3a] my-1" />
-          <button className="w-full text-left px-4 py-3 text-sm hover:bg-[#3a3a3a] active:bg-[#444] text-red-400 touch-manipulation"
+          <button className="w-full text-left px-4 py-3 text-sm hover:bg-[#3a3a3a] text-red-400 touch-manipulation"
             onClick={() => { removeClip(track.id, ctxMenu.clipId); setCtxMenu(null) }}>
             Delete
           </button>
         </div>
       )}
 
-      {/* Add clip — bottom sheet */}
+      {/* Add clip bottom sheet */}
       {isAdding && (
-        <div
-          className="fixed inset-x-0 bottom-0 z-50 bg-[#2a2a2a] border-t border-[#3a3a3a] p-4 shadow-2xl animate-sheet-up"
-          onClick={(e) => e.stopPropagation()}
-        >
+        <div className="fixed inset-x-0 bottom-0 z-50 bg-[#2a2a2a] border-t border-[#3a3a3a] p-4 shadow-2xl animate-sheet-up"
+          onClick={(e) => e.stopPropagation()}>
           <div className="flex items-center justify-between mb-3">
             <span className="text-sm font-semibold text-white">Add Clip — {track.name}</span>
-            <button onClick={() => setIsAdding(false)} className="text-gray-400 hover:text-white p-2 touch-manipulation text-lg leading-none">×</button>
+            <button onClick={() => setIsAdding(false)} className="text-gray-400 hover:text-white p-2 touch-manipulation text-lg">×</button>
           </div>
           <div className="grid grid-cols-2 gap-3 mb-3">
             <div>
               <label className="text-xs text-gray-400 block mb-1">Label</label>
-              <input
-                className="w-full bg-[#1a1a1a] border border-[#3a3a3a] rounded px-3 py-2 text-sm text-white"
-                placeholder={`Clip ${track.clips.length + 1}`}
-                value={clipLabel}
+              <input className="w-full bg-[#1a1a1a] border border-[#3a3a3a] rounded px-3 py-2 text-sm text-white"
+                placeholder={`Clip ${track.clips.length + 1}`} value={clipLabel}
                 onChange={(e) => setClipLabel(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleAddClip()}
-                autoFocus
-              />
+                onKeyDown={(e) => e.key === 'Enter' && handleAddClip()} autoFocus />
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="text-xs text-gray-400 block mb-1">Bar</label>
-                <input type="number" min={1} value={clipBar}
-                  onChange={(e) => setClipBar(Number(e.target.value))}
-                  className="w-full bg-[#1a1a1a] border border-[#3a3a3a] rounded px-2 py-2 text-sm text-white text-center"
-                />
+                <input type="number" min={1} value={clipBar} onChange={(e) => setClipBar(Number(e.target.value))}
+                  className="w-full bg-[#1a1a1a] border border-[#3a3a3a] rounded px-2 py-2 text-sm text-white text-center" />
               </div>
               <div>
                 <label className="text-xs text-gray-400 block mb-1">Len</label>
-                <input type="number" min={1} value={clipLen}
-                  onChange={(e) => setClipLen(Number(e.target.value))}
-                  className="w-full bg-[#1a1a1a] border border-[#3a3a3a] rounded px-2 py-2 text-sm text-white text-center"
-                />
+                <input type="number" min={1} value={clipLen} onChange={(e) => setClipLen(Number(e.target.value))}
+                  className="w-full bg-[#1a1a1a] border border-[#3a3a3a] rounded px-2 py-2 text-sm text-white text-center" />
               </div>
             </div>
           </div>
-          <button onClick={handleAddClip} className="w-full bg-[#e8a020] text-black font-bold py-3 rounded text-sm hover:bg-yellow-400 active:bg-yellow-300 touch-manipulation transition-colors">
+          <button onClick={handleAddClip} className="w-full bg-[#e8a020] text-black font-bold py-3 rounded text-sm hover:bg-yellow-400 touch-manipulation">
             Add Clip
           </button>
         </div>
