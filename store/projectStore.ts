@@ -11,7 +11,7 @@ export interface StepNote {
   active: boolean
   note: string
   velocity: number
-  duration: string   // e.g. '32n', '16n', '8n', '4n', '2n', '1m'
+  duration: string
 }
 
 export interface Clip {
@@ -70,6 +70,7 @@ export type ZoomLabel = typeof ZOOM_LEVELS[number]['label']
 export const HEADER_W = 160
 
 export interface ProjectState {
+  projectName: string
   bpm: number
   bars: number
   barWidth: number
@@ -77,6 +78,7 @@ export interface ProjectState {
   markers: SectionMarker[]
   selectedTrackId: string | null
   selectedClipId: string | null
+  setProjectName: (name: string) => void
   setBpm: (bpm: number) => void
   setBars: (bars: number) => void
   setBarWidth: (px: number) => void
@@ -130,6 +132,7 @@ export const useProjectStore = create<ProjectState>()(
   persist(
     temporal(
       (set, get) => ({
+        projectName: 'Untitled Project',
         bpm: 128,
         bars: 32,
         barWidth: 36,
@@ -138,6 +141,7 @@ export const useProjectStore = create<ProjectState>()(
         selectedTrackId: null,
         selectedClipId: null,
 
+        setProjectName: (projectName) => set({ projectName }),
         setBpm: (bpm) => set({ bpm }),
         setBars: (bars) => set({ bars }),
         setBarWidth: (barWidth) => set({ barWidth }),
@@ -290,14 +294,15 @@ export const useProjectStore = create<ProjectState>()(
         })),
 
         exportJSON: () => {
-          const { bpm, bars, tracks, markers } = get()
-          return JSON.stringify({ bpm, bars, tracks, markers }, null, 2)
+          const { projectName, bpm, bars, tracks, markers } = get()
+          return JSON.stringify({ projectName, bpm, bars, tracks, markers }, null, 2)
         },
 
         importJSON: (json) => {
           try {
             const data = JSON.parse(json)
             set({
+              projectName: data.projectName ?? 'Untitled Project',
               bpm: data.bpm ?? 128,
               bars: data.bars ?? 32,
               tracks: (data.tracks ?? []).map((t: Track) => ({
