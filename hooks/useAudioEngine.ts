@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useCallback, useState } from 'react'
-import { useProjectStore, Track, SynthType } from '@/store/projectStore'
+import { useProjectStore, Track, SynthType, DrumSlot, DrumKit } from '@/store/projectStore'
 
 type ToneModule = typeof import('tone')
 
@@ -55,8 +55,133 @@ function applyFXParam(node: any, param: string, value: number) {
     else if (n === 'low') { if (node.low) node.low.value = value }
     else if (n === 'mid') { if (node.mid) node.mid.value = value }
     else if (n === 'high') { if (node.high) node.high.value = value }
+    // ADSR params — applied to instrument envelope directly (see applyADSR)
+    else if (n === 'attack') { if (node.attack !== undefined) node.attack = value }
+    else if (n === 'sustain') { if (node.sustain !== undefined) node.sustain = value }
+    else if (n === 'release') { if (node.release !== undefined) node.release = value }
   } catch {}
 }
+
+// --- 808 / 909 drum kit voice factories ---
+
+function make808Voice(Tone: ToneModule, slot: DrumSlot): any {
+  switch (slot) {
+    case 'kick': {
+      const s = new Tone.MembraneSynth({
+        pitchDecay: 0.12, octaves: 8,
+        envelope: { attack: 0.001, decay: 0.6, sustain: 0, release: 0.2 },
+      })
+      return s
+    }
+    case 'snare': {
+      const s = new Tone.NoiseSynth({
+        noise: { type: 'white' },
+        envelope: { attack: 0.001, decay: 0.18, sustain: 0, release: 0.05 },
+      })
+      return s
+    }
+    case 'clap': {
+      const s = new Tone.NoiseSynth({
+        noise: { type: 'pink' },
+        envelope: { attack: 0.005, decay: 0.3, sustain: 0, release: 0.1 },
+      })
+      return s
+    }
+    case 'hihat_closed': {
+      const s = new Tone.MetalSynth({
+        envelope: { attack: 0.001, decay: 0.04, release: 0.01 },
+        harmonicity: 5.1, modulationIndex: 32, resonance: 3500, octaves: 1.2,
+      })
+      s.frequency.value = 600
+      return s
+    }
+    case 'hihat_open': {
+      const s = new Tone.MetalSynth({
+        envelope: { attack: 0.001, decay: 0.35, release: 0.2 },
+        harmonicity: 5.1, modulationIndex: 32, resonance: 3500, octaves: 1.2,
+      })
+      s.frequency.value = 600
+      return s
+    }
+    case 'tom': {
+      const s = new Tone.MembraneSynth({
+        pitchDecay: 0.08, octaves: 5,
+        envelope: { attack: 0.001, decay: 0.3, sustain: 0, release: 0.1 },
+      })
+      return s
+    }
+    case 'rimshot':
+    default: {
+      const s = new Tone.MetalSynth({
+        envelope: { attack: 0.001, decay: 0.08, release: 0.01 },
+        harmonicity: 5.1, modulationIndex: 32, resonance: 4000, octaves: 1.5,
+      })
+      s.frequency.value = 400
+      return s
+    }
+  }
+}
+
+function make909Voice(Tone: ToneModule, slot: DrumSlot): any {
+  switch (slot) {
+    case 'kick': {
+      const s = new Tone.MembraneSynth({
+        pitchDecay: 0.05, octaves: 6,
+        envelope: { attack: 0.001, decay: 0.28, sustain: 0, release: 0.1 },
+      })
+      return s
+    }
+    case 'snare': {
+      const s = new Tone.NoiseSynth({
+        noise: { type: 'white' },
+        envelope: { attack: 0.001, decay: 0.1, sustain: 0, release: 0.03 },
+      })
+      return s
+    }
+    case 'clap': {
+      const s = new Tone.NoiseSynth({
+        noise: { type: 'white' },
+        envelope: { attack: 0.001, decay: 0.12, sustain: 0, release: 0.04 },
+      })
+      return s
+    }
+    case 'hihat_closed': {
+      const s = new Tone.MetalSynth({
+        envelope: { attack: 0.001, decay: 0.025, release: 0.005 },
+        harmonicity: 5.1, modulationIndex: 32, resonance: 4200, octaves: 1.5,
+      })
+      s.frequency.value = 800
+      return s
+    }
+    case 'hihat_open': {
+      const s = new Tone.MetalSynth({
+        envelope: { attack: 0.001, decay: 0.22, release: 0.12 },
+        harmonicity: 5.1, modulationIndex: 32, resonance: 4200, octaves: 1.5,
+      })
+      s.frequency.value = 800
+      return s
+    }
+    case 'tom': {
+      const s = new Tone.MembraneSynth({
+        pitchDecay: 0.04, octaves: 4,
+        envelope: { attack: 0.001, decay: 0.18, sustain: 0, release: 0.06 },
+      })
+      return s
+    }
+    case 'rimshot':
+    default: {
+      const s = new Tone.MetalSynth({
+        envelope: { attack: 0.001, decay: 0.06, release: 0.01 },
+        harmonicity: 5.1, modulationIndex: 32, resonance: 4500, octaves: 1.5,
+      })
+      s.frequency.value = 500
+      return s
+    }
+  }
+}
+
+// Map of drumKit instrument sets per track: trackId -> Map<DrumSlot, instrument>
+const kitInstrMap = new Map<string, Map<DrumSlot, any>>()
 
 export function useAudioEngine(): AudioEngine {
   const toneRef = useRef<ToneModule | null>(null)
@@ -98,14 +223,11 @@ export function useAudioEngine(): AudioEngine {
       return new Tone.Sampler(noteMap)
     }
 
-    // Rimshot: MetalSynth — frequency must be set post-init (not in options)
-    if (track.type === 'drum' && (track as any).drumVoice === 'rimshot') {
+    // Rimshot (legacy single-voice)
+    if (track.type === 'drum' && (track.drumVoice ?? 'membrane') === 'rimshot' && (track.drumKit ?? 'none') === 'none') {
       const synth = new Tone.MetalSynth({
         envelope: { attack: 0.001, decay: 0.08, release: 0.01 },
-        harmonicity: 5.1,
-        modulationIndex: 32,
-        resonance: 4000,
-        octaves: 1.5,
+        harmonicity: 5.1, modulationIndex: 32, resonance: 4000, octaves: 1.5,
       })
       synth.frequency.value = 400
       return synth
@@ -143,6 +265,7 @@ export function useAudioEngine(): AudioEngine {
     const n = name.toLowerCase()
     const wet = params.wet !== undefined ? parseFloat(params.wet) : undefined
     let node: any = null
+    if (n === 'adsr') return null // ADSR is applied to envelope directly, not a node
     if (n.includes('reverb'))     node = new Tone.Reverb({ decay: params.decay !== undefined ? parseFloat(params.decay) : 2.5, wet: wet ?? 0.3 })
     else if (n.includes('delay')) node = new Tone.FeedbackDelay(params.time ?? '8n', params.feedback !== undefined ? parseFloat(params.feedback) : 0.3)
     else if (n.includes('compressor') || n === 'ott' || n === 'sidechain') node = new Tone.Compressor(params.threshold !== undefined ? parseFloat(params.threshold) : -24, params.ratio !== undefined ? parseFloat(params.ratio) : 4)
@@ -156,9 +279,25 @@ export function useAudioEngine(): AudioEngine {
     return node
   }
 
+  // Apply ADSR device params to an instrument's envelope
+  function applyADSR(instr: any, params: Record<string, string>) {
+    try {
+      const env = instr?.envelope ?? instr?._envelope
+      if (!env) return
+      if (params.attack  !== undefined) env.attack  = parseFloat(params.attack)
+      if (params.decay   !== undefined) env.decay   = parseFloat(params.decay)
+      if (params.sustain !== undefined) env.sustain = parseFloat(params.sustain)
+      if (params.release !== undefined) env.release = parseFloat(params.release)
+    } catch {}
+  }
+
   const syncTrack = useCallback(async (track: Track) => {
     const Tone = await getTone()
     if (!masterRef.current) return
+
+    // Dispose old kit voices
+    const oldKit = kitInstrMap.get(track.id)
+    if (oldKit) { oldKit.forEach(v => { try { v.dispose() } catch {} }); kitInstrMap.delete(track.id) }
 
     const oldInstr = instrumentMap.current.get(track.id)
     if (oldInstr) { try { oldInstr.dispose() } catch {} }
@@ -176,29 +315,81 @@ export function useAudioEngine(): AudioEngine {
 
     if (track.type === 'group') return
 
-    const instr = await makeInstrument(Tone, track)
-    if (!instr) return
-    instrumentMap.current.set(track.id, instr)
+    const kit = track.drumKit ?? 'none'
+    const hasSample = sampleBufferMap.has(track.id)
+    const isKitTrack = track.type === 'drum' && kit !== 'none' && !hasSample
 
+    // Build FX chain nodes
     const fxNodes: any[] = []
     const fxIds: string[] = []
+    let adsrParams: Record<string, string> | null = null
     for (const device of track.fx) {
-      const node = makeFXNode(Tone, device.name, device.params)
-      if (node) {
-        fxNodes.push(node)
-        fxIds.push(device.id)
-        fxParamMap.set(device.id, node)
+      if (device.name.toLowerCase() === 'adsr') {
+        adsrParams = device.params
+        fxParamMap.set(device.id, { _isADSR: true, trackId: track.id, deviceId: device.id })
+        continue
       }
+      const node = makeFXNode(Tone, device.name, device.params)
+      if (node) { fxNodes.push(node); fxIds.push(device.id); fxParamMap.set(device.id, node) }
     }
     fxMap.current.set(track.id, fxNodes)
     fxIdMap.current.set(track.id, fxIds)
 
-    const chain: any[] = [instr, ...fxNodes, masterRef.current]
-    for (let i = 0; i < chain.length - 1; i++) {
-      try { chain[i].connect(chain[i + 1]) } catch {}
+    if (isKitTrack) {
+      // Build one voice per slot, connect each through fx chain
+      const slotMap = new Map<DrumSlot, any>()
+      const slots: DrumSlot[] = ['kick','snare','clap','hihat_closed','hihat_open','tom','rimshot']
+      for (const slot of slots) {
+        const voice = kit === '808' ? make808Voice(Tone, slot) : make909Voice(Tone, slot)
+        const chain: any[] = [voice, ...fxNodes, masterRef.current]
+        for (let i = 0; i < chain.length - 1; i++) { try { chain[i].connect(chain[i+1]) } catch {} }
+        if (adsrParams) applyADSR(voice, adsrParams)
+        slotMap.set(slot, voice)
+      }
+      kitInstrMap.set(track.id, slotMap)
+
+      const clip = track.clips.find(c => c.steps && c.steps.length === 16)
+      if (!clip) return
+      const steps = clip.steps
+
+      const seq = new Tone.Sequence((time: number, stepIndex: number) => {
+        const i = Number(stepIndex) % 16
+        const step = steps[i]
+        if (!step?.active) return
+        const velocity = Math.max(0.05, (step.velocity ?? 100) / 127)
+        const slot: DrumSlot = step.drumSlot ?? 'kick'
+        const voice = slotMap.get(slot)
+        if (!voice) return
+        try {
+          if (voice.triggerAttackRelease) {
+            // NoiseSynth / MetalSynth don't take a note arg
+            const vtype = voice.constructor?.name ?? ''
+            if (vtype === 'NoiseSynth') {
+              voice.triggerAttackRelease('16n', time, velocity)
+            } else if (vtype === 'MetalSynth') {
+              voice.triggerAttackRelease('16n', time, velocity)
+            } else {
+              // MembraneSynth — pitch based on slot
+              const note = slot === 'kick' ? 'C1' : slot === 'tom' ? 'G1' : 'C2'
+              voice.triggerAttackRelease(note, '16n', time, velocity)
+            }
+          }
+        } catch {}
+      }, Array.from({ length: 16 }, (_, i) => i), '16n')
+
+      seq.loop = true
+      seqMap.current.set(track.id, seq)
+      return
     }
 
-    const hasSample = sampleBufferMap.has(track.id)
+    // Non-kit path
+    const instr = await makeInstrument(Tone, track)
+    if (!instr) return
+    instrumentMap.current.set(track.id, instr)
+    if (adsrParams) applyADSR(instr, adsrParams)
+
+    const chain: any[] = [instr, ...fxNodes, masterRef.current]
+    for (let i = 0; i < chain.length - 1; i++) { try { chain[i].connect(chain[i + 1]) } catch {} }
 
     if (track.type === 'audio') {
       const events = track.clips.map(clip => ({
@@ -221,7 +412,7 @@ export function useAudioEngine(): AudioEngine {
 
     const steps = clip.steps
     const isDrum = track.type === 'drum'
-    const isRimshot = isDrum && (track as any).drumVoice === 'rimshot'
+    const isRimshot = isDrum && (track.drumVoice ?? 'membrane') === 'rimshot'
 
     const seq = new Tone.Sequence((time: number, stepIndex: number) => {
       const i = Number(stepIndex) % 16
@@ -249,7 +440,15 @@ export function useAudioEngine(): AudioEngine {
 
   const updateFXParam = useCallback((trackId: string, deviceId: string, param: string, value: number) => {
     const node = fxParamMap.get(deviceId)
-    if (node) applyFXParam(node, param, value)
+    if (node?._isADSR) {
+      // Apply ADSR to live instrument
+      const instr = instrumentMap.current.get(trackId)
+      const kit = kitInstrMap.get(trackId)
+      if (kit) kit.forEach(v => applyFXParam(v?.envelope ?? v, param, value))
+      else if (instr) applyFXParam(instr?.envelope ?? instr, param, value)
+    } else if (node) {
+      applyFXParam(node, param, value)
+    }
     useProjectStore.getState().updateFXParam(trackId, deviceId, param, String(value))
   }, [])
 
@@ -281,6 +480,8 @@ export function useAudioEngine(): AudioEngine {
       fxMap.current.forEach(nodes => nodes.forEach(n => { try { n.dispose() } catch {} }))
       seqMap.current.forEach(s => { try { s.dispose() } catch {} })
       partMap.current.forEach(p => { try { p.dispose() } catch {} })
+      kitInstrMap.forEach(kit => kit.forEach(v => { try { v.dispose() } catch {} }))
+      kitInstrMap.clear()
     }
   }, [])
 

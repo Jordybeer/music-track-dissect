@@ -7,12 +7,26 @@ import { temporal } from 'zundo'
 export type TrackType = 'audio' | 'midi' | 'drum' | 'group' | 'return'
 export type SynthType = 'sawtooth' | 'square' | 'sine' | 'triangle' | 'fmsine' | 'amsine'
 export type DrumVoice = 'membrane' | 'rimshot'
+export type DrumKit = 'none' | '808' | '909'
+export type DrumSlot = 'kick' | 'snare' | 'clap' | 'hihat_closed' | 'hihat_open' | 'tom' | 'rimshot'
+
+export const DRUM_KIT_SLOTS: DrumSlot[] = ['kick', 'snare', 'clap', 'hihat_closed', 'hihat_open', 'tom', 'rimshot']
+export const DRUM_SLOT_LABELS: Record<DrumSlot, string> = {
+  kick: 'Kick',
+  snare: 'Snare',
+  clap: 'Clap',
+  hihat_closed: 'HH Cl',
+  hihat_open: 'HH Op',
+  tom: 'Tom',
+  rimshot: 'Rim',
+}
 
 export interface StepNote {
   active: boolean
   note: string
   velocity: number
   duration: string
+  drumSlot?: DrumSlot
 }
 
 export interface Clip {
@@ -49,6 +63,7 @@ export interface Track {
   synthType: SynthType
   sampleName: string
   drumVoice: DrumVoice
+  drumKit: DrumKit
 }
 
 export interface SectionMarker {
@@ -167,6 +182,7 @@ export const useProjectStore = create<ProjectState>()(
             synthType: 'sawtooth',
             sampleName: '',
             drumVoice: 'membrane',
+            drumKit: 'none',
           }]
         })),
 
@@ -326,6 +342,7 @@ export const useProjectStore = create<ProjectState>()(
                 synthType: t.synthType ?? 'sawtooth',
                 sampleName: t.sampleName ?? '',
                 drumVoice: t.drumVoice ?? 'membrane',
+                drumKit: t.drumKit ?? 'none',
                 clips: (t.clips ?? []).map((c: Clip) => ({
                   ...c,
                   steps: c.steps?.length === 16
