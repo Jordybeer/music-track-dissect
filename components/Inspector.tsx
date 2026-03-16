@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef } from 'react'
-import { useProjectStore, makeSteps, SynthType } from '@/store/projectStore'
+import { useProjectStore, makeSteps, SynthType, DrumVoice } from '@/store/projectStore'
 import { storeSample } from '@/hooks/useAudioEngine'
 import StepEditor from './StepEditor'
 
@@ -23,6 +23,11 @@ const SYNTH_TYPES: { value: SynthType; label: string }[] = [
   { value: 'amsine',   label: 'AM Sine' },
 ]
 
+const DRUM_VOICES: { value: DrumVoice; label: string; desc: string }[] = [
+  { value: 'membrane', label: 'Kick / Tom', desc: 'MembraneSynth' },
+  { value: 'rimshot',  label: 'Rimshot',    desc: 'MetalSynth' },
+]
+
 const AUDIO_ACCEPT = 'audio/*,.mp3,.wav,.flac,.aac,.ogg,.m4a,.aiff,.aif'
 
 function uid() { return Math.random().toString(36).slice(2, 10) }
@@ -36,6 +41,7 @@ export default function Inspector({ onClose }: Props) {
   const selectedClip = track?.clips.find(c => c.id === selectedClipId)
   const isPatternTrack = track?.type === 'midi' || track?.type === 'drum'
   const sampleRef = useRef<HTMLInputElement>(null)
+  const hasSample = !!track?.sampleName
 
   async function handleSampleUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -98,6 +104,29 @@ export default function Inspector({ onClose }: Props) {
                 </div>
               )}
 
+              {/* Drum voice selector — only when no sample loaded */}
+              {track.type === 'drum' && !hasSample && (
+                <div>
+                  <label className="text-[10px] text-gray-500 block mb-1">Voice</label>
+                  <div className="flex gap-1">
+                    {DRUM_VOICES.map(v => (
+                      <button
+                        key={v.value}
+                        onClick={() => updateTrack(track.id, { drumVoice: v.value })}
+                        className={`flex-1 px-2 py-1 text-[10px] rounded border transition-colors touch-manipulation ${
+                          (track.drumVoice ?? 'membrane') === v.value
+                            ? 'bg-[#ef4444] text-white border-[#ef4444] font-bold'
+                            : 'bg-transparent text-gray-400 border-[#3a3a3a] hover:border-[#555]'
+                        }`}
+                      >
+                        <span className="block font-semibold">{v.label}</span>
+                        <span className="block text-[8px] opacity-60">{v.desc}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {(track.type === 'audio' || track.type === 'drum') && (
                 <div>
                   <label className="text-[10px] text-gray-500 block mb-1">Sample</label>
@@ -128,7 +157,7 @@ export default function Inspector({ onClose }: Props) {
                   )}
                   <p className="text-[9px] text-gray-600 mt-1 leading-tight">
                     {track.type === 'drum'
-                      ? 'Each active step triggers this sample'
+                      ? 'Step duration controls sample cut length (ghost = 32n)'
                       : 'Replaces synth. Pitch-mapped to C3.'}
                   </p>
                 </div>

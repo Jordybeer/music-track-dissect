@@ -6,6 +6,7 @@ import { temporal } from 'zundo'
 
 export type TrackType = 'audio' | 'midi' | 'drum' | 'group' | 'return'
 export type SynthType = 'sawtooth' | 'square' | 'sine' | 'triangle' | 'fmsine' | 'amsine'
+export type DrumVoice = 'membrane' | 'rimshot'
 
 export interface StepNote {
   active: boolean
@@ -47,6 +48,7 @@ export interface Track {
   collapsed: boolean
   synthType: SynthType
   sampleName: string
+  drumVoice: DrumVoice
 }
 
 export interface SectionMarker {
@@ -100,6 +102,7 @@ export interface ProjectState {
   addFX: (trackId: string, device: FXDevice) => void
   removeFX: (trackId: string, deviceId: string) => void
   reorderFX: (trackId: string, from: number, to: number) => void
+  updateFXParam: (trackId: string, deviceId: string, param: string, value: string) => void
   addMarker: (marker: SectionMarker) => void
   removeMarker: (id: string) => void
   updateMarker: (id: string, patch: Partial<SectionMarker>) => void
@@ -163,6 +166,7 @@ export const useProjectStore = create<ProjectState>()(
             collapsed: false,
             synthType: 'sawtooth',
             sampleName: '',
+            drumVoice: 'membrane',
           }]
         })),
 
@@ -287,6 +291,16 @@ export const useProjectStore = create<ProjectState>()(
           })
         })),
 
+        updateFXParam: (trackId, deviceId, param, value) => set((s) => ({
+          tracks: s.tracks.map(t => {
+            if (t.id !== trackId) return t
+            return {
+              ...t,
+              fx: t.fx.map(d => d.id !== deviceId ? d : { ...d, params: { ...d.params, [param]: value } })
+            }
+          })
+        })),
+
         addMarker: (marker) => set((s) => ({ markers: [...s.markers, marker] })),
         removeMarker: (id) => set((s) => ({ markers: s.markers.filter(m => m.id !== id) })),
         updateMarker: (id, patch) => set((s) => ({
@@ -311,6 +325,7 @@ export const useProjectStore = create<ProjectState>()(
                 collapsed: t.collapsed ?? false,
                 synthType: t.synthType ?? 'sawtooth',
                 sampleName: t.sampleName ?? '',
+                drumVoice: t.drumVoice ?? 'membrane',
                 clips: (t.clips ?? []).map((c: Clip) => ({
                   ...c,
                   steps: c.steps?.length === 16

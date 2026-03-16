@@ -24,6 +24,7 @@ export interface AudioEngine {
   pause: () => void
   stop: () => void
   setMasterVolume: (db: number) => void
+  updateFXParam: (trackId: string, deviceId: string, param: string, value: number) => void
 }
 
 export const sampleBufferMap = new Map<string, ArrayBuffer>()
@@ -37,11 +38,33 @@ export function clearSample(trackId: string) {
   sampleBufferMap.delete(trackId)
 }
 
+// Maps deviceId -> param -> Tone Signal/param reference
+const fxParamMap = new Map<string, Record<string, any>>()
+
+function applyFXParam(node: any, param: string, value: number) {
+  try {
+    const n = param.toLowerCase()
+    if (n === 'wet' || n === 'mix') { if (node.wet) node.wet.value = value }
+    else if (n === 'decay') { if (node.decay !== undefined) node.decay = value }
+    else if (n === 'feedback') { if (node.feedback) node.feedback.value = value }
+    else if (n === 'delayTime' || n === 'time') { if (node.delayTime) node.delayTime.value = value }
+    else if (n === 'threshold') { if (node.threshold) node.threshold.value = value }
+    else if (n === 'ratio') { if (node.ratio) node.ratio.value = value }
+    else if (n === 'frequency' || n === 'freq') { if (node.frequency) node.frequency.value = value }
+    else if (n === 'depth') { if (node.depth !== undefined) node.depth = value }
+    else if (n === 'distortion' || n === 'drive') { if (node.distortion !== undefined) node.distortion = value }
+    else if (n === 'low') { if (node.low) node.low.value = value }
+    else if (n === 'mid') { if (node.mid) node.mid.value = value }
+    else if (n === 'high') { if (node.high) node.high.value = value }
+  } catch {}
+}
+
 export function useAudioEngine(): AudioEngine {
   const toneRef = useRef<ToneModule | null>(null)
   const masterRef = useRef<InstanceType<ToneModule['Volume']> | null>(null)
   const instrumentMap = useRef<Map<string, any>>(new Map())
   const fxMap = useRef<Map<string, any[]>>(new Map())
+  const fxIdMap = useRef<Map<string, string[]>>(new Map()) // trackId -> deviceId[]
   const seqMap = useRef<Map<string, any>>(new Map())
   const partMap = useRef<Map<string, any>>(new Map())
 
@@ -72,10 +95,21 @@ export function useAudioEngine(): AudioEngine {
         noteMap[DRUM_SAMPLE_NOTE] = audioBuf
         return new Tone.Sampler(noteMap)
       }
-      // midi or audio: map C3 + all step notes so any trigger works
       const noteMap: Record<string, AudioBuffer> = {}
       ;[MIDI_SAMPLE_NOTE, ...DRUM_SLOT_NOTES].forEach(n => { noteMap[n] = audioBuf })
       return new Tone.Sampler(noteMap)
+    }
+
+    // Rimshot voice: MetalSynth with tight high-freq settings
+    if (track.type === 'drum' && (track as any).drumVoice === 'rimshot') {
+      return new Tone.MetalSynth({
+        frequency: 400,
+        envelope: { attack: 0.001, decay: 0.08, release: 0.01 },
+        harmonicity: 5.1,
+        modulationIndex: 32,
+        resonance: 4000,
+        octaves: 1.5,
+      })
     }
 
     switch (track.type) {
@@ -106,18 +140,21 @@ export function useAudioEngine(): AudioEngine {
     }
   }
 
-  function makeFXNode(Tone: ToneModule, name: string): any | null {
+  function makeFXNode(Tone: ToneModule, name: string, params: Record<string, string>): any | null {
     const n = name.toLowerCase()
-    if (n.includes('reverb'))     return new Tone.Reverb({ decay: 2.5, wet: 0.3 })
-    if (n.includes('delay'))      return new Tone.FeedbackDelay('8n', 0.3)
-    if (n.includes('compressor') || n === 'ott' || n === 'sidechain') return new Tone.Compressor(-24, 4)
-    if (n.includes('filter'))     return new Tone.AutoFilter('4n').start()
-    if (n.includes('chorus'))     return new Tone.Chorus(4, 2.5, 0.5).start()
-    if (n.includes('distortion') || n.includes('saturator') || n.includes('redux')) return new Tone.Distortion(0.4)
-    if (n.includes('phaser'))     return new Tone.Phaser({ frequency: 0.5, octaves: 3, baseFrequency: 1000 })
-    if (n.includes('eq'))         return new Tone.EQ3(0, 0, 0)
-    if (n.includes('limiter'))    return new Tone.Limiter(-6)
-    return null
+    const wet = params.wet !== undefined ? parseFloat(params.wet) : undefined
+    let node: any = null
+    if (n.includes('reverb'))     node = new Tone.Reverb({ decay: params.decay !== undefined ? parseFloat(params.decay) : 2.5, wet: wet ?? 0.3 })
+    else if (n.includes('delay')) node = new Tone.FeedbackDelay(params.time ?? '8n', params.feedback !== undefined ? parseFloat(params.feedback) : 0.3)
+    else if (n.includes('compressor') || n === 'ott' || n === 'sidechain') node = new Tone.Compressor(params.threshold !== undefined ? parseFloat(params.threshold) : -24, params.ratio !== undefined ? parseFloat(params.ratio) : 4)
+    else if (n.includes('filter')) node = new Tone.AutoFilter('4n').start()
+    else if (n.includes('chorus')) node = new Tone.Chorus(4, 2.5, 0.5).start()
+    else if (n.includes('distortion') || n.includes('saturator') || n.includes('redux')) node = new Tone.Distortion(params.distortion !== undefined ? parseFloat(params.distortion) : 0.4)
+    else if (n.includes('phaser')) node = new Tone.Phaser({ frequency: 0.5, octaves: 3, baseFrequency: 1000 })
+    else if (n.includes('eq'))    node = new Tone.EQ3(params.low !== undefined ? parseFloat(params.low) : 0, params.mid !== undefined ? parseFloat(params.mid) : 0, params.high !== undefined ? parseFloat(params.high) : 0)
+    else if (n.includes('limiter')) node = new Tone.Limiter(params.threshold !== undefined ? parseFloat(params.threshold) : -6)
+    if (node && wet !== undefined && node.wet) node.wet.value = wet
+    return node
   }
 
   const syncTrack = useCallback(async (track: Track) => {
@@ -134,6 +171,7 @@ export function useAudioEngine(): AudioEngine {
 
     instrumentMap.current.delete(track.id)
     fxMap.current.delete(track.id)
+    fxIdMap.current.delete(track.id)
     seqMap.current.delete(track.id)
     partMap.current.delete(track.id)
 
@@ -144,11 +182,17 @@ export function useAudioEngine(): AudioEngine {
     instrumentMap.current.set(track.id, instr)
 
     const fxNodes: any[] = []
+    const fxIds: string[] = []
     for (const device of track.fx) {
-      const node = makeFXNode(Tone, device.name)
-      if (node) fxNodes.push(node)
+      const node = makeFXNode(Tone, device.name, device.params)
+      if (node) {
+        fxNodes.push(node)
+        fxIds.push(device.id)
+        fxParamMap.set(device.id, node)
+      }
     }
     fxMap.current.set(track.id, fxNodes)
+    fxIdMap.current.set(track.id, fxIds)
 
     const chain: any[] = [instr, ...fxNodes, masterRef.current]
     for (let i = 0; i < chain.length - 1; i++) {
@@ -157,7 +201,6 @@ export function useAudioEngine(): AudioEngine {
 
     const hasSample = sampleBufferMap.has(track.id)
 
-    // Audio track: schedule clips on Transport via Part
     if (track.type === 'audio') {
       const events = track.clips.map(clip => ({
         time: `${Math.max(0, clip.startBar - 1)}:0:0`,
@@ -174,12 +217,12 @@ export function useAudioEngine(): AudioEngine {
       return
     }
 
-    // MIDI / Drum: step sequencer — duration comes from each step
     const clip = track.clips.find(c => c.steps && c.steps.length === 16)
     if (!clip) return
 
     const steps = clip.steps
     const isDrum = track.type === 'drum'
+    const isRimshot = isDrum && (track as any).drumVoice === 'rimshot'
 
     const seq = new Tone.Sequence((time: number, stepIndex: number) => {
       const i = Number(stepIndex) % 16
@@ -187,8 +230,15 @@ export function useAudioEngine(): AudioEngine {
       if (!step?.active) return
 
       const velocity = Math.max(0.05, (step.velocity ?? 100) / 127)
-      // Use step duration; fall back to 16n (MIDI) or 32n (drum/sample)
+
+      // Duration drives sample length: ghost = short (32n), full hit = longer duration
       const duration = step.duration ?? (hasSample || isDrum ? '32n' : '16n')
+
+      if (isRimshot) {
+        // MetalSynth uses triggerAttackRelease with freq + duration
+        try { instr.triggerAttackRelease('16n', time, velocity) } catch {}
+        return
+      }
 
       const note = hasSample
         ? (isDrum ? DRUM_SAMPLE_NOTE : MIDI_SAMPLE_NOTE)
@@ -200,6 +250,14 @@ export function useAudioEngine(): AudioEngine {
     seq.loop = true
     seqMap.current.set(track.id, seq)
   }, [bars, getTone])
+
+  // Live param update — no need to rebuild the whole chain
+  const updateFXParam = useCallback((trackId: string, deviceId: string, param: string, value: number) => {
+    const node = fxParamMap.get(deviceId)
+    if (node) applyFXParam(node, param, value)
+    // Persist to store
+    useProjectStore.getState().updateFXParam(trackId, deviceId, param, String(value))
+  }, [])
 
   useEffect(() => {
     if (!toneRef.current) return
@@ -279,5 +337,5 @@ export function useAudioEngine(): AudioEngine {
     if (masterRef.current) masterRef.current.volume.value = db
   }, [getTone])
 
-  return { transportState, position, masterVolume, play, pause, stop, setMasterVolume }
+  return { transportState, position, masterVolume, play, pause, stop, setMasterVolume, updateFXParam }
 }
