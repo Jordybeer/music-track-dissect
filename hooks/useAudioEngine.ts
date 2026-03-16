@@ -25,6 +25,7 @@ export interface AudioEngine {
   stop: () => void
   setMasterVolume: (db: number) => void
   updateFXParam: (trackId: string, deviceId: string, param: string, value: number) => void
+  setTrackVolume: (trackId: string, db: number) => void
 }
 
 export const sampleBufferMap = new Map<string, ArrayBuffer>()
@@ -40,7 +41,6 @@ export function clearSample(trackId: string) {
 
 const fxParamMap = new Map<string, any>()
 
-// Sidechain state: per deviceId, store { gainNode, analyser, rafId, amount, attack, release }
 const sidechainMap = new Map<string, {
   gainNode: any
   analyser: AnalyserNode
@@ -63,67 +63,67 @@ function stopSidechain(deviceId: string) {
 function applyFXParam(node: any, param: string, value: number) {
   try {
     const n = param.toLowerCase()
-    if (n === 'wet' || n === 'mix') { if (node.wet) node.wet.value = value }
-    else if (n === 'decay') { if (node.decay !== undefined) node.decay = value }
-    else if (n === 'feedback') { if (node.feedback) node.feedback.value = value }
-    else if (n === 'delaytime' || n === 'time') { if (node.delayTime) node.delayTime.value = value }
-    else if (n === 'threshold') { if (node.threshold) node.threshold.value = value }
-    else if (n === 'ratio') { if (node.ratio) node.ratio.value = value }
-    else if (n === 'frequency' || n === 'freq') { if (node.frequency) node.frequency.value = value }
-    else if (n === 'depth') { if (node.depth !== undefined) node.depth = value }
-    else if (n === 'distortion' || n === 'drive') { if (node.distortion !== undefined) node.distortion = value }
-    else if (n === 'low') { if (node.low) node.low.value = value }
-    else if (n === 'mid') { if (node.mid) node.mid.value = value }
-    else if (n === 'high') { if (node.high) node.high.value = value }
-    else if (n === 'attack') { if (node.attack !== undefined) node.attack = value }
-    else if (n === 'sustain') { if (node.sustain !== undefined) node.sustain = value }
-    else if (n === 'release') { if (node.release !== undefined) node.release = value }
+    if (n === 'wet' || n === 'mix')                   { if (node.wet)          node.wet.value       = value }
+    else if (n === 'decay')                           { if (node.decay !== undefined) node.decay     = value }
+    else if (n === 'feedback')                        { if (node.feedback)     node.feedback.value  = value }
+    else if (n === 'delaytime' || n === 'time')       { if (node.delayTime)    node.delayTime.value = value }
+    else if (n === 'threshold')                       { if (node.threshold)    node.threshold.value = value }
+    else if (n === 'ratio')                           { if (node.ratio)        node.ratio.value     = value }
+    else if (n === 'frequency' || n === 'freq')       { if (node.frequency)    node.frequency.value = value }
+    else if (n === 'depth')                           { if (node.depth !== undefined)   node.depth   = value }
+    else if (n === 'distortion' || n === 'drive')     { if (node.distortion !== undefined) node.distortion = value }
+    else if (n === 'low')                             { if (node.low)          node.low.value       = value }
+    else if (n === 'mid')                             { if (node.mid)          node.mid.value       = value }
+    else if (n === 'high')                            { if (node.high)         node.high.value      = value }
+    else if (n === 'attack')                          { if (node.attack  !== undefined) node.attack  = value }
+    else if (n === 'sustain')                         { if (node.sustain !== undefined) node.sustain = value }
+    else if (n === 'release')                         { if (node.release !== undefined) node.release = value }
   } catch {}
 }
 
 function make808Voice(Tone: ToneModule, slot: DrumSlot): any {
   switch (slot) {
-    case 'kick':         return new Tone.MembraneSynth({ pitchDecay: 0.12, octaves: 8, envelope: { attack: 0.001, decay: 0.6, sustain: 0, release: 0.2 } })
-    case 'snare':        return new Tone.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.001, decay: 0.18, sustain: 0, release: 0.05 } })
-    case 'clap':         return new Tone.NoiseSynth({ noise: { type: 'pink' }, envelope: { attack: 0.005, decay: 0.3, sustain: 0, release: 0.1 } })
-    case 'hihat_closed': { const s = new Tone.MetalSynth({ envelope: { attack: 0.001, decay: 0.04, release: 0.01 }, harmonicity: 5.1, modulationIndex: 32, resonance: 3500, octaves: 1.2 }); s.frequency.value = 600; return s }
-    case 'hihat_open':   { const s = new Tone.MetalSynth({ envelope: { attack: 0.001, decay: 0.35, release: 0.2 }, harmonicity: 5.1, modulationIndex: 32, resonance: 3500, octaves: 1.2 }); s.frequency.value = 600; return s }
-    case 'tom':          return new Tone.MembraneSynth({ pitchDecay: 0.08, octaves: 5, envelope: { attack: 0.001, decay: 0.3, sustain: 0, release: 0.1 } })
-    default:             { const s = new Tone.MetalSynth({ envelope: { attack: 0.001, decay: 0.08, release: 0.01 }, harmonicity: 5.1, modulationIndex: 32, resonance: 4000, octaves: 1.5 }); s.frequency.value = 400; return s }
+    case 'kick':         return new Tone.MembraneSynth({ pitchDecay: 0.12, octaves: 8, envelope: { attack: 0.001, decay: 0.6,  sustain: 0, release: 0.2  } })
+    case 'snare':        return new Tone.NoiseSynth({   noise: { type: 'white' }, envelope: { attack: 0.001, decay: 0.18, sustain: 0, release: 0.05 } })
+    case 'clap':         return new Tone.NoiseSynth({   noise: { type: 'pink'  }, envelope: { attack: 0.005, decay: 0.3,  sustain: 0, release: 0.1  } })
+    case 'hihat_closed': { const s = new Tone.MetalSynth({ envelope: { attack: 0.001, decay: 0.04,  release: 0.01 }, harmonicity: 5.1, modulationIndex: 32, resonance: 3500, octaves: 1.2 }); s.frequency.value = 600; return s }
+    case 'hihat_open':   { const s = new Tone.MetalSynth({ envelope: { attack: 0.001, decay: 0.35,  release: 0.2  }, harmonicity: 5.1, modulationIndex: 32, resonance: 3500, octaves: 1.2 }); s.frequency.value = 600; return s }
+    case 'tom':          return new Tone.MembraneSynth({ pitchDecay: 0.08, octaves: 5, envelope: { attack: 0.001, decay: 0.3,  sustain: 0, release: 0.1  } })
+    default:             { const s = new Tone.MetalSynth({ envelope: { attack: 0.001, decay: 0.08,  release: 0.01 }, harmonicity: 5.1, modulationIndex: 32, resonance: 4000, octaves: 1.5 }); s.frequency.value = 400; return s }
   }
 }
 
 function make909Voice(Tone: ToneModule, slot: DrumSlot): any {
   switch (slot) {
-    case 'kick':         return new Tone.MembraneSynth({ pitchDecay: 0.05, octaves: 6, envelope: { attack: 0.001, decay: 0.28, sustain: 0, release: 0.1 } })
-    case 'snare':        return new Tone.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.001, decay: 0.1, sustain: 0, release: 0.03 } })
-    case 'clap':         return new Tone.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.001, decay: 0.12, sustain: 0, release: 0.04 } })
+    case 'kick':         return new Tone.MembraneSynth({ pitchDecay: 0.05, octaves: 6, envelope: { attack: 0.001, decay: 0.28, sustain: 0, release: 0.1  } })
+    case 'snare':        return new Tone.NoiseSynth({   noise: { type: 'white' }, envelope: { attack: 0.001, decay: 0.1,  sustain: 0, release: 0.03 } })
+    case 'clap':         return new Tone.NoiseSynth({   noise: { type: 'white' }, envelope: { attack: 0.001, decay: 0.12, sustain: 0, release: 0.04 } })
     case 'hihat_closed': { const s = new Tone.MetalSynth({ envelope: { attack: 0.001, decay: 0.025, release: 0.005 }, harmonicity: 5.1, modulationIndex: 32, resonance: 4200, octaves: 1.5 }); s.frequency.value = 800; return s }
-    case 'hihat_open':   { const s = new Tone.MetalSynth({ envelope: { attack: 0.001, decay: 0.22, release: 0.12 }, harmonicity: 5.1, modulationIndex: 32, resonance: 4200, octaves: 1.5 }); s.frequency.value = 800; return s }
+    case 'hihat_open':   { const s = new Tone.MetalSynth({ envelope: { attack: 0.001, decay: 0.22,  release: 0.12  }, harmonicity: 5.1, modulationIndex: 32, resonance: 4200, octaves: 1.5 }); s.frequency.value = 800; return s }
     case 'tom':          return new Tone.MembraneSynth({ pitchDecay: 0.04, octaves: 4, envelope: { attack: 0.001, decay: 0.18, sustain: 0, release: 0.06 } })
-    default:             { const s = new Tone.MetalSynth({ envelope: { attack: 0.001, decay: 0.06, release: 0.01 }, harmonicity: 5.1, modulationIndex: 32, resonance: 4500, octaves: 1.5 }); s.frequency.value = 500; return s }
+    default:             { const s = new Tone.MetalSynth({ envelope: { attack: 0.001, decay: 0.06,  release: 0.01  }, harmonicity: 5.1, modulationIndex: 32, resonance: 4500, octaves: 1.5 }); s.frequency.value = 500; return s }
   }
 }
 
 const kitInstrMap = new Map<string, Map<DrumSlot, any>>()
-
-// Exposed so sidechain can tap source instrument output node
 export const instrumentOutputMap = new Map<string, any>()
 
+// TB-303 engine map: { synth, filter, dist }
+const tb303Map = new Map<string, { synth: any; filter: any; dist: any }>()
+
 export function useAudioEngine(): AudioEngine {
-  const toneRef = useRef<ToneModule | null>(null)
-  const masterRef = useRef<InstanceType<ToneModule['Volume']> | null>(null)
-  const instrumentMap = useRef<Map<string, any>>(new Map())
-  const fxMap = useRef<Map<string, any[]>>(new Map())
-  const fxIdMap = useRef<Map<string, string[]>>(new Map())
-  const seqMap = useRef<Map<string, any>>(new Map())
-  const partMap = useRef<Map<string, any>>(new Map())
-  // Tone.Volume node inserted before master for per-track mute/solo/sidechain
+  const toneRef    = useRef<ToneModule | null>(null)
+  const masterRef  = useRef<InstanceType<ToneModule['Volume']> | null>(null)
+  const instrumentMap  = useRef<Map<string, any>>(new Map())
+  const fxMap          = useRef<Map<string, any[]>>(new Map())
+  const fxIdMap        = useRef<Map<string, string[]>>(new Map())
+  const seqMap         = useRef<Map<string, any>>(new Map())
+  const partMap        = useRef<Map<string, any>>(new Map())
   const sidechainGainMap = useRef<Map<string, any>>(new Map())
 
   const [transportState, setTransportState] = useState<TransportState>('stopped')
-  const [position, setPosition] = useState('1:0:0')
-  const [masterVolume, setMasterVolumeState] = useState(0)
+  const [position,       setPosition]       = useState('1:0:0')
+  const [masterVolume,   setMasterVolumeState] = useState(0)
 
   const { tracks, bpm, bars } = useProjectStore()
 
@@ -137,9 +137,8 @@ export function useAudioEngine(): AudioEngine {
 
   async function makeInstrument(Tone: ToneModule, track: Track): Promise<any> {
     const hasSample = sampleBufferMap.has(track.id)
-
     if (hasSample && (track.type === 'audio' || track.type === 'drum' || track.type === 'midi')) {
-      const rawBuf = sampleBufferMap.get(track.id)!
+      const rawBuf  = sampleBufferMap.get(track.id)!
       const audioBuf = await Tone.getContext().rawContext.decodeAudioData(rawBuf.slice(0))
       if (track.type === 'drum') {
         const noteMap: Record<string, AudioBuffer> = {}
@@ -151,18 +150,16 @@ export function useAudioEngine(): AudioEngine {
       ;[MIDI_SAMPLE_NOTE, ...DRUM_SLOT_NOTES].forEach(n => { noteMap[n] = audioBuf })
       return new Tone.Sampler(noteMap)
     }
-
     if (track.type === 'drum' && (track.drumVoice ?? 'membrane') === 'rimshot' && (track.drumKit ?? 'none') === 'none') {
       const synth = new Tone.MetalSynth({ envelope: { attack: 0.001, decay: 0.08, release: 0.01 }, harmonicity: 5.1, modulationIndex: 32, resonance: 4000, octaves: 1.5 })
       synth.frequency.value = 400
       return synth
     }
-
     switch (track.type) {
       case 'midi':   return new Tone.PolySynth(Tone.Synth, { oscillator: { type: (track.synthType ?? 'sawtooth') as any }, envelope: { attack: 0.02, decay: 0.1, sustain: 0.5, release: 0.8 } })
       case 'drum':   return new Tone.MembraneSynth({ pitchDecay: 0.05, octaves: 6, envelope: { attack: 0.001, decay: 0.3, sustain: 0, release: 0.1 } })
       case 'audio':  return new Tone.Synth({ oscillator: { type: 'triangle' }, envelope: { attack: 0.05, decay: 0.2, sustain: 0.6, release: 1 } })
-      case 'return': return new Tone.Synth({ oscillator: { type: 'sine' }, envelope: { attack: 0.1, decay: 0.3, sustain: 0.4, release: 2 } })
+      case 'return': return new Tone.Synth({ oscillator: { type: 'sine'     }, envelope: { attack: 0.1,  decay: 0.3, sustain: 0.4, release: 2 } })
       default:       return null
     }
   }
@@ -172,15 +169,15 @@ export function useAudioEngine(): AudioEngine {
     if (n === 'adsr' || n === 'sidechain') return null
     const wet = params.wet !== undefined ? parseFloat(params.wet) : undefined
     let node: any = null
-    if (n.includes('reverb'))       node = new Tone.Reverb({ decay: params.decay !== undefined ? parseFloat(params.decay) : 2.5, wet: wet ?? 0.3 })
-    else if (n.includes('delay'))   node = new Tone.FeedbackDelay(params.time ?? '8n', params.feedback !== undefined ? parseFloat(params.feedback) : 0.3)
-    else if (n.includes('compressor') || n === 'ott') node = new Tone.Compressor(params.threshold !== undefined ? parseFloat(params.threshold) : -24, params.ratio !== undefined ? parseFloat(params.ratio) : 4)
-    else if (n.includes('filter'))  node = new Tone.AutoFilter('4n').start()
-    else if (n.includes('chorus'))  node = new Tone.Chorus(4, 2.5, 0.5).start()
+    if      (n.includes('reverb'))                          node = new Tone.Reverb({ decay: params.decay !== undefined ? parseFloat(params.decay) : 2.5, wet: wet ?? 0.3 })
+    else if (n.includes('delay'))                          node = new Tone.FeedbackDelay(params.time ?? '8n', params.feedback !== undefined ? parseFloat(params.feedback) : 0.3)
+    else if (n.includes('compressor') || n === 'ott')      node = new Tone.Compressor(params.threshold !== undefined ? parseFloat(params.threshold) : -24, params.ratio !== undefined ? parseFloat(params.ratio) : 4)
+    else if (n.includes('filter'))                         node = new Tone.AutoFilter('4n').start()
+    else if (n.includes('chorus'))                         node = new Tone.Chorus(4, 2.5, 0.5).start()
     else if (n.includes('distortion') || n.includes('saturator') || n.includes('redux')) node = new Tone.Distortion(params.distortion !== undefined ? parseFloat(params.distortion) : 0.4)
-    else if (n.includes('phaser'))  node = new Tone.Phaser({ frequency: 0.5, octaves: 3, baseFrequency: 1000 })
-    else if (n.includes('eq'))      node = new Tone.EQ3(params.low !== undefined ? parseFloat(params.low) : 0, params.mid !== undefined ? parseFloat(params.mid) : 0, params.high !== undefined ? parseFloat(params.high) : 0)
-    else if (n.includes('limiter')) node = new Tone.Limiter(params.threshold !== undefined ? parseFloat(params.threshold) : -6)
+    else if (n.includes('phaser'))                         node = new Tone.Phaser({ frequency: 0.5, octaves: 3, baseFrequency: 1000 })
+    else if (n.includes('eq'))                             node = new Tone.EQ3(params.low !== undefined ? parseFloat(params.low) : 0, params.mid !== undefined ? parseFloat(params.mid) : 0, params.high !== undefined ? parseFloat(params.high) : 0)
+    else if (n.includes('limiter'))                        node = new Tone.Limiter(params.threshold !== undefined ? parseFloat(params.threshold) : -6)
     if (node && wet !== undefined && node.wet) node.wet.value = wet
     return node
   }
@@ -196,63 +193,122 @@ export function useAudioEngine(): AudioEngine {
     } catch {}
   }
 
-  // Start a rAF-based sidechain follower: taps source instrument, ducks dest Tone.Volume node
-  function startSidechain(
-    deviceId: string,
-    sourceTrackId: string,
-    destGainNode: any,
-    audioCtx: AudioContext,
-    params: Record<string, string>
-  ) {
+  function startSidechain(deviceId: string, sourceTrackId: string, destGainNode: any, audioCtx: AudioContext, params: Record<string, string>) {
     stopSidechain(deviceId)
     const sourceInstr = instrumentOutputMap.get(sourceTrackId)
     if (!sourceInstr) return
-
     const analyser = audioCtx.createAnalyser()
     analyser.fftSize = 256
     const dataArr = new Float32Array(analyser.fftSize)
-
     try {
       const sourceNode: AudioNode = sourceInstr.output ?? sourceInstr._gainNode ?? (sourceInstr as any)
       sourceNode.connect(analyser)
     } catch { return }
-
-    const amount  = params.amount  !== undefined ? parseFloat(params.amount)  : 0.8
-    const attack  = params.attack  !== undefined ? parseFloat(params.attack)  : 0.01
-    const release = params.release !== undefined ? parseFloat(params.release) : 0.2
-    const sampleRate = audioCtx.sampleRate
-    const attackCoef  = Math.exp(-1 / (attack  * sampleRate / analyser.fftSize))
-    const releaseCoef = Math.exp(-1 / (release * sampleRate / analyser.fftSize))
-
+    const amount   = params.amount  !== undefined ? parseFloat(params.amount)  : 0.8
+    const attack   = params.attack  !== undefined ? parseFloat(params.attack)  : 0.01
+    const release  = params.release !== undefined ? parseFloat(params.release) : 0.2
+    const sr       = audioCtx.sampleRate
+    const attackCoef  = Math.exp(-1 / (attack  * sr / analyser.fftSize))
+    const releaseCoef = Math.exp(-1 / (release * sr / analyser.fftSize))
     let currentGain = 1
-
     const sc = { gainNode: destGainNode, analyser, rafId: 0, amount, attack, release, currentGain }
     sidechainMap.set(deviceId, sc)
-
     function tick() {
       analyser.getFloatTimeDomainData(dataArr)
       let peak = 0
-      for (let i = 0; i < dataArr.length; i++) {
-        const v = Math.abs(dataArr[i])
-        if (v > peak) peak = v
-      }
+      for (let i = 0; i < dataArr.length; i++) { const v = Math.abs(dataArr[i]); if (v > peak) peak = v }
       const target = 1 - peak * sc.amount
       const coef = target < sc.currentGain ? attackCoef : releaseCoef
       sc.currentGain = sc.currentGain * coef + target * (1 - coef)
-      try {
-        const linearGain = Math.max(0.0001, Math.min(1, sc.currentGain))
-        destGainNode.volume.value = 20 * Math.log10(linearGain)
-      } catch {}
+      try { destGainNode.volume.value = 20 * Math.log10(Math.max(0.0001, Math.min(1, sc.currentGain))) } catch {}
       sc.rafId = requestAnimationFrame(tick)
     }
     sc.rafId = requestAnimationFrame(tick)
+  }
+
+  // ─── TB-303 engine ────────────────────────────────────────────────────────
+  async function sync303Track(Tone: ToneModule, track: Track, scGain: any) {
+    // Dispose old 303
+    const old = tb303Map.get(track.id)
+    if (old) {
+      try { old.synth.dispose()  } catch {}
+      try { old.filter.dispose() } catch {}
+      try { old.dist.dispose()   } catch {}
+      tb303Map.delete(track.id)
+    }
+
+    const cutoff    = track.tb303Cutoff    ?? 800
+    const resonance = track.tb303Resonance ?? 0.6
+    const wave      = track.tb303Wave      ?? 'sawtooth'
+
+    // Monophonic synth for 303 (monophony = authentic)
+    const synth = new Tone.Synth({
+      oscillator: { type: wave as any },
+      envelope: { attack: 0.005, decay: track.tb303Decay ?? 0.3, sustain: 0, release: 0.05 },
+      portamento: 0,  // set per-step
+    })
+
+    // Resonant low-pass filter — the heart of the 303 sound
+    const filter = new Tone.Filter({
+      type: 'lowpass',
+      frequency: cutoff,
+      rolloff: -24,
+      Q: resonance * 20,  // Q up to 20 gives that screaming resonance
+    })
+
+    // Slight waveshaper distortion for that warm, slightly crunchy tone
+    const dist = new Tone.Distortion(0.12)
+
+    synth.connect(filter)
+    filter.connect(dist)
+    dist.connect(scGain)
+
+    tb303Map.set(track.id, { synth, filter, dist })
+    instrumentOutputMap.set(track.id, synth)
+
+    const clip = track.clips.find(c => c.steps && c.steps.length === 16)
+    if (!clip) return
+
+    const steps = clip.steps
+    const envMod   = track.tb303EnvMod   ?? 0.5
+    const accentAmt = track.tb303Accent  ?? 0.7
+    const baseCutoff = cutoff
+
+    const seq = new Tone.Sequence((time: number, stepIndex: number) => {
+      const i = Number(stepIndex) % 16
+      const step = steps[i]
+      if (!step?.active) return
+
+      const note = step.note || 'C3'
+      const velocity = (step.velocity ?? 100) / 127
+      const isAccent = step.accent ?? false
+      const isSlide  = step.slide  ?? false
+
+      // Slide: set portamento to glide into this note
+      try { synth.portamento = isSlide ? 0.08 : 0 } catch {}
+
+      // Accent: boost volume and spike the filter cutoff
+      const velFinal = isAccent ? Math.min(1, velocity + accentAmt * 0.4) : velocity
+
+      // Filter envelope: cutoff sweeps up by envMod amount, then decays with note
+      const envCutoff = baseCutoff + envMod * 4000 * (isAccent ? 1.4 : 1)
+      try {
+        filter.frequency.cancelScheduledValues(time)
+        filter.frequency.setValueAtTime(envCutoff, time)
+        filter.frequency.exponentialRampToValueAtTime(baseCutoff, time + (track.tb303Decay ?? 0.3))
+      } catch {}
+
+      try { synth.triggerAttackRelease(note, step.duration ?? '16n', time, velFinal) } catch {}
+    }, Array.from({ length: 16 }, (_, i) => i), '16n')
+
+    seq.loop = true
+    seqMap.current.set(track.id, seq)
   }
 
   const syncTrack = useCallback(async (track: Track) => {
     const Tone = await getTone()
     if (!masterRef.current) return
 
-    // Stop any active sidechain on this track
     track.fx.forEach(d => { if (d.name === 'Sidechain') stopSidechain(d.id) })
 
     const oldKit = kitInstrMap.get(track.id)
@@ -276,14 +332,26 @@ export function useAudioEngine(): AudioEngine {
 
     if (track.type === 'group') return
 
-    const kit = track.drumKit ?? 'none'
+    const scGain = new Tone.Volume(track.volume ?? 0)
+    scGain.connect(masterRef.current)
+    if (track.muted) scGain.volume.value = -Infinity
+    sidechainGainMap.current.set(track.id, scGain)
+
+    // ─── TB-303 path ────────────────────────────────────────────
+    if (track.type === 'tb303') {
+      await sync303Track(Tone, track, scGain)
+      return
+    }
+
+    const kit      = track.drumKit ?? 'none'
     const hasSample = sampleBufferMap.has(track.id)
     const isKitTrack = track.type === 'drum' && kit !== 'none' && !hasSample
 
     const fxNodes: any[] = []
-    const fxIds: string[] = []
+    const fxIds:   string[] = []
     let adsrParams: Record<string, string> | null = null
     let sidechainDevice: typeof track.fx[0] | null = null
+
     for (const device of track.fx) {
       if (device.name.toLowerCase() === 'adsr') {
         adsrParams = device.params
@@ -300,13 +368,6 @@ export function useAudioEngine(): AudioEngine {
     }
     fxMap.current.set(track.id, fxNodes)
     fxIdMap.current.set(track.id, fxIds)
-
-    // Tone.Volume node for mute/solo/sidechain ducking, chained into master
-    const scGain = new Tone.Volume(0)
-    scGain.connect(masterRef.current)
-    // Apply mute state immediately
-    if (track.muted) scGain.volume.value = -Infinity
-    sidechainGainMap.current.set(track.id, scGain)
 
     if (isKitTrack) {
       const slotMap = new Map<DrumSlot, any>()
@@ -352,7 +413,6 @@ export function useAudioEngine(): AudioEngine {
       }, Array.from({ length: 16 }, (_, i) => i), '16n')
       seq.loop = true
       seqMap.current.set(track.id, seq)
-
       if (sidechainDevice?.params.sourceTrackId) {
         const audioCtx = Tone.getContext().rawContext as AudioContext
         startSidechain(sidechainDevice.id, sidechainDevice.params.sourceTrackId, scGain, audioCtx, sidechainDevice.params)
@@ -360,7 +420,6 @@ export function useAudioEngine(): AudioEngine {
       return
     }
 
-    // Non-kit path
     const instr = await makeInstrument(Tone, track)
     if (!instr) return
     instrumentMap.current.set(track.id, instr)
@@ -411,12 +470,11 @@ export function useAudioEngine(): AudioEngine {
         : (isDrum ? DRUM_SLOT_NOTES[i] : (step.note || STEP_NOTES[i % STEP_NOTES.length]))
       try { instr.triggerAttackRelease(note, duration, time, velocity) } catch {}
     }, Array.from({ length: 16 }, (_, i) => i), '16n')
-
     seq.loop = true
     seqMap.current.set(track.id, seq)
   }, [bars, getTone])
 
-  // Apply mute/solo changes live without full resync
+  // Live mute/solo without resync
   useEffect(() => {
     if (!toneRef.current) return
     const soloedTracks = tracks.filter(t => t.soloed)
@@ -425,16 +483,24 @@ export function useAudioEngine(): AudioEngine {
       const scGain = sidechainGainMap.current.get(track.id)
       if (!scGain) return
       const shouldMute = track.muted || (hasSolo && !track.soloed)
-      scGain.volume.value = shouldMute ? -Infinity : 0
+      scGain.volume.value = shouldMute ? -Infinity : (track.volume ?? 0)
     })
   }, [tracks])
 
   const updateFXParam = useCallback((trackId: string, deviceId: string, param: string, value: number) => {
+    // TB-303 params routed directly to engine nodes
+    const t303 = tb303Map.get(trackId)
+    if (t303) {
+      if (param === 'cutoff')     { try { t303.filter.frequency.value = value } catch {} }
+      if (param === 'resonance')  { try { t303.filter.Q.value = value * 20    } catch {} }
+      if (param === 'distortion') { try { t303.dist.distortion = value        } catch {} }
+      // wave/envMod/decay/accent stored in track and applied on next resync
+    }
     const node = fxParamMap.get(deviceId)
     if (node?._isADSR) {
       const instr = instrumentMap.current.get(trackId)
-      const kit = kitInstrMap.get(trackId)
-      if (kit) kit.forEach(v => applyFXParam(v?.envelope ?? v, param, value))
+      const kit   = kitInstrMap.get(trackId)
+      if (kit)   kit.forEach(v => applyFXParam(v?.envelope ?? v, param, value))
       else if (instr) applyFXParam(instr?.envelope ?? instr, param, value)
     } else if (node?._isSidechain) {
       const sc = sidechainMap.get(deviceId)
@@ -447,6 +513,14 @@ export function useAudioEngine(): AudioEngine {
       applyFXParam(node, param, value)
     }
     useProjectStore.getState().updateFXParam(trackId, deviceId, param, String(value))
+  }, [])
+
+  const setTrackVolume = useCallback((trackId: string, db: number) => {
+    const scGain = sidechainGainMap.current.get(trackId)
+    if (scGain) {
+      try { scGain.volume.value = db } catch {}
+    }
+    useProjectStore.getState().updateTrack(trackId, { volume: db })
   }, [])
 
   useEffect(() => {
@@ -479,6 +553,8 @@ export function useAudioEngine(): AudioEngine {
       partMap.current.forEach(p => { try { p.dispose() } catch {} })
       kitInstrMap.forEach(kit => kit.forEach(v => { try { v.dispose() } catch {} }))
       kitInstrMap.clear()
+      tb303Map.forEach(e => { try { e.synth.dispose() } catch {}; try { e.filter.dispose() } catch {}; try { e.dist.dispose() } catch {} })
+      tb303Map.clear()
       sidechainMap.forEach((_, id) => stopSidechain(id))
     }
   }, [])
@@ -490,15 +566,13 @@ export function useAudioEngine(): AudioEngine {
     transport.bpm.value = bpm
     transport.loop = true
     transport.loopEnd = `${Math.max(1, bars)}m`
-
     if (transportState === 'paused') {
       transport.start()
       setTransportState('started')
       return
     }
-
     await Promise.all(tracks.map(syncTrack))
-    seqMap.current.forEach(seq => { try { seq.stop(0) } catch {}; try { seq.start(0) } catch {} })
+    seqMap.current.forEach(seq  => { try { seq.stop(0)  } catch {}; try { seq.start(0)  } catch {} })
     partMap.current.forEach(part => { try { part.stop(0) } catch {}; try { part.start(0) } catch {} })
     transport.position = 0
     transport.start()
@@ -516,7 +590,7 @@ export function useAudioEngine(): AudioEngine {
     const transport = toneRef.current.getTransport()
     transport.stop()
     transport.position = 0
-    seqMap.current.forEach(seq => { try { seq.stop(0) } catch {} })
+    seqMap.current.forEach(seq  => { try { seq.stop(0)  } catch {} })
     partMap.current.forEach(part => { try { part.stop(0) } catch {} })
     setTransportState('stopped')
     setPosition('1:0:0')
@@ -528,5 +602,5 @@ export function useAudioEngine(): AudioEngine {
     if (masterRef.current) masterRef.current.volume.value = db
   }, [getTone])
 
-  return { transportState, position, masterVolume, play, pause, stop, setMasterVolume, updateFXParam }
+  return { transportState, position, masterVolume, play, pause, stop, setMasterVolume, updateFXParam, setTrackVolume }
 }

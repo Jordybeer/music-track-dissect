@@ -11,28 +11,29 @@ import Timeline from '@/components/Timeline'
 import Inspector from '@/components/Inspector'
 import TopBar from '@/components/TopBar'
 import DeviceRack from '@/components/DeviceRack'
+import FaderPanel from '@/components/FaderPanel'
 import TransportBar from '@/components/TransportBar'
 import { useProjectStore } from '@/store/projectStore'
 import { useKeyboard } from '@/hooks/useKeyboard'
 
 export default function Home() {
   const { reorderTracks, tracks, moveClip, setGroupId } = useProjectStore()
-  const [activeId, setActiveId] = useState<string | null>(null)
-  const [activeKind, setActiveKind] = useState<string | null>(null)
+  const [activeId,    setActiveId]    = useState<string | null>(null)
+  const [activeKind,  setActiveKind]  = useState<string | null>(null)
   const [inspectorOpen, setInspectorOpen] = useState(false)
-  const [rackOpen, setRackOpen] = useState(true)
+  const [rackOpen,    setRackOpen]    = useState(true)
+  const [faderOpen,   setFaderOpen]   = useState(false)
 
   useKeyboard()
 
   useEffect(() => {
     if (window.innerWidth >= 1024) setInspectorOpen(true)
-    // collapse rack by default on small screens
-    if (window.innerWidth < 768) setRackOpen(false)
+    if (window.innerWidth < 768)   { setRackOpen(false); }
   }, [])
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 12 } })
+    useSensor(TouchSensor,   { activationConstraint: { delay: 200, tolerance: 12 } })
   )
 
   function handleDragStart(event: DragStartEvent) {
@@ -45,7 +46,7 @@ export default function Home() {
     setActiveId(null)
     setActiveKind(null)
     if (!over) return
-    const kind = active.data.current?.kind
+    const kind  = active.data.current?.kind
     const overId = String(over.id)
     if (kind === 'track-row' && overId.startsWith('group-drop-')) {
       const groupId = overId.replace('group-drop-', '')
@@ -76,16 +77,16 @@ export default function Home() {
     >
       <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#1a1a1a]">
         <TopBar
-          inspectorOpen={inspectorOpen}
-          onToggleInspector={() => setInspectorOpen(v => !v)}
-          rackOpen={rackOpen}
-          onToggleRack={() => setRackOpen(v => !v)}
+          inspectorOpen={inspectorOpen}  onToggleInspector={() => setInspectorOpen(v => !v)}
+          rackOpen={rackOpen}            onToggleRack={() => setRackOpen(v => !v)}
+          faderOpen={faderOpen}          onToggleFader={() => setFaderOpen(v => !v)}
         />
         <TransportBar />
         <div className="flex flex-1 overflow-hidden min-h-0">
           <BrowserPanel />
           <div className="flex flex-col flex-1 overflow-hidden min-h-0">
             <Timeline />
+            {faderOpen && <FaderPanel />}
             <DeviceRack rackOpen={rackOpen} onToggleRack={() => setRackOpen(v => !v)} />
           </div>
           {inspectorOpen && <Inspector onClose={() => setInspectorOpen(false)} />}

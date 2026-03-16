@@ -4,7 +4,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { temporal } from 'zundo'
 
-export type TrackType = 'audio' | 'midi' | 'drum' | 'group' | 'return'
+export type TrackType = 'audio' | 'midi' | 'drum' | 'group' | 'return' | 'tb303'
 export type SynthType = 'sawtooth' | 'square' | 'sine' | 'triangle' | 'fmsine' | 'amsine'
 export type DrumVoice = 'membrane' | 'rimshot'
 export type DrumKit = 'none' | '808' | '909'
@@ -12,13 +12,8 @@ export type DrumSlot = 'kick' | 'snare' | 'clap' | 'hihat_closed' | 'hihat_open'
 
 export const DRUM_KIT_SLOTS: DrumSlot[] = ['kick', 'snare', 'clap', 'hihat_closed', 'hihat_open', 'tom', 'rimshot']
 export const DRUM_SLOT_LABELS: Record<DrumSlot, string> = {
-  kick: 'Kick',
-  snare: 'Snare',
-  clap: 'Clap',
-  hihat_closed: 'HH Cl',
-  hihat_open: 'HH Op',
-  tom: 'Tom',
-  rimshot: 'Rim',
+  kick: 'Kick', snare: 'Snare', clap: 'Clap',
+  hihat_closed: 'HH Cl', hihat_open: 'HH Op', tom: 'Tom', rimshot: 'Rim',
 }
 
 export interface StepNote {
@@ -27,6 +22,8 @@ export interface StepNote {
   velocity: number
   duration: string
   drumSlot?: DrumSlot
+  slide?: boolean
+  accent?: boolean
 }
 
 export interface Clip {
@@ -66,6 +63,14 @@ export interface Track {
   drumKit: DrumKit
   muted: boolean
   soloed: boolean
+  volume: number           // dB, 0 = unity
+  // TB-303 params
+  tb303Cutoff: number      // 20–8000 Hz
+  tb303Resonance: number   // 0–1
+  tb303EnvMod: number      // 0–1
+  tb303Decay: number       // 0.01–2 s
+  tb303Accent: number      // 0–1
+  tb303Wave: 'sawtooth' | 'square'
 }
 
 export interface SectionMarker {
@@ -130,19 +135,18 @@ export interface ProjectState {
 }
 
 const trackColors: Record<TrackType, string> = {
-  audio: '#3b82f6',
-  midi: '#22c55e',
-  drum: '#ef4444',
-  group: '#a855f7',
+  audio:  '#3b82f6',
+  midi:   '#22c55e',
+  drum:   '#ef4444',
+  group:  '#a855f7',
   return: '#f59e0b',
+  tb303:  '#22c55e',
 }
 
 export function makeSteps(count = 16): StepNote[] {
   return Array.from({ length: count }, () => ({
-    active: false,
-    note: 'C3',
-    velocity: 100,
-    duration: '16n',
+    active: false, note: 'C3', velocity: 100, duration: '16n',
+    slide: false, accent: false,
   }))
 }
 
@@ -150,18 +154,30 @@ export function uid() {
   return Math.random().toString(36).slice(2, 10)
 }
 
+function defaultTrack(type: TrackType, name: string, groupId: string | null = null): Track {
+  return {
+    id: uid(), name, type,
+    color: trackColors[type],
+    clips: [], fx: [], sends: [],
+    role: '', key: '', scale: '', notes: '',
+    groupId, collapsed: false,
+    synthType: 'sawtooth',
+    sampleName: '', drumVoice: 'membrane', drumKit: 'none',
+    muted: false, soloed: false,
+    volume: 0,
+    tb303Cutoff: 800, tb303Resonance: 0.6, tb303EnvMod: 0.5,
+    tb303Decay: 0.3, tb303Accent: 0.7, tb303Wave: 'sawtooth',
+  }
+}
+
 export const useProjectStore = create<ProjectState>()(
   persist(
     temporal(
       (set, get) => ({
         projectName: 'Untitled Project',
-        bpm: 128,
-        bars: 32,
-        barWidth: 36,
-        tracks: [],
-        markers: [],
-        selectedTrackId: null,
-        selectedClipId: null,
+        bpm: 128, bars: 32, barWidth: 36,
+        tracks: [], markers: [],
+        selectedTrackId: null, selectedClipId: null,
 
         setProjectName: (projectName) => set({ projectName }),
         setBpm: (bpm) => set({ bpm }),
@@ -169,27 +185,14 @@ export const useProjectStore = create<ProjectState>()(
         setBarWidth: (barWidth) => set({ barWidth }),
 
         addTrack: (type, groupId = null) => set((s) => ({
-          tracks: [...s.tracks, {
-            id: uid(),
-            name: `${type.charAt(0).toUpperCase() + type.slice(1)} ${s.tracks.filter(t => t.type === type).length + 1}`,
-            type,
-            color: trackColors[type],
-            clips: [],
-            fx: [],
-            sends: [],
-            role: '',
-            key: '',
-            scale: '',
-            notes: '',
-            groupId: groupId ?? null,
-            collapsed: false,
-            synthType: 'sawtooth',
-            sampleName: '',
-            drumVoice: 'membrane',
-            drumKit: 'none',
-            muted: false,
-            soloed: false,
-          }]
+          tracks: [
+            ...s.tracks,
+            defaultTrack(
+              type,
+              `${type === 'tb303' ? 'TB-303' : type.charAt(0).toUpperCase() + type.slice(1)} ${s.tracks.filter(t => t.type === type).length + 1}`,
+              groupId
+            ),
+          ]
         })),
 
         removeTrack: (id) => set((s) => ({
@@ -207,7 +210,7 @@ export const useProjectStore = create<ProjectState>()(
         }),
 
         selectTrack: (id) => set({ selectedTrackId: id, selectedClipId: null }),
-        selectClip: (id) => set({ selectedClipId: id }),
+        selectClip:  (id) => set({ selectedClipId: id }),
 
         updateTrack: (id, patch) => set((s) => ({
           tracks: s.tracks.map(t => t.id === id ? { ...t, ...patch } : t)
@@ -229,19 +232,11 @@ export const useProjectStore = create<ProjectState>()(
           const track = s.tracks.find(t => t.id === trackId)
           if (!track) return s
           const willSolo = !track.soloed
-          if (willSolo) {
-            // Solo this track: mute all others (except group tracks)
-            return {
-              tracks: s.tracks.map(t => ({
-                ...t,
-                soloed: t.id === trackId,
-              }))
-            }
-          } else {
-            // Un-solo: clear all solos
-            return {
-              tracks: s.tracks.map(t => ({ ...t, soloed: false }))
-            }
+          return {
+            tracks: s.tracks.map(t => ({
+              ...t,
+              soloed: willSolo ? t.id === trackId : false,
+            }))
           }
         }),
 
@@ -251,17 +246,13 @@ export const useProjectStore = create<ProjectState>()(
 
         removeClip: (trackId, clipId) => set((s) => ({
           tracks: s.tracks.map(t => t.id === trackId
-            ? { ...t, clips: t.clips.filter(c => c.id !== clipId) }
-            : t
-          ),
+            ? { ...t, clips: t.clips.filter(c => c.id !== clipId) } : t),
           selectedClipId: s.selectedClipId === clipId ? null : s.selectedClipId,
         })),
 
         updateClip: (trackId, clipId, patch) => set((s) => ({
           tracks: s.tracks.map(t => t.id === trackId
-            ? { ...t, clips: t.clips.map(c => c.id === clipId ? { ...c, ...patch } : c) }
-            : t
-          )
+            ? { ...t, clips: t.clips.map(c => c.id === clipId ? { ...c, ...patch } : c) } : t)
         })),
 
         duplicateClip: (trackId, clipId) => set((s) => {
@@ -269,16 +260,13 @@ export const useProjectStore = create<ProjectState>()(
           const clip = track?.clips.find(c => c.id === clipId)
           if (!clip) return s
           const newClip: Clip = {
-            ...clip,
-            id: uid(),
+            ...clip, id: uid(),
             startBar: clip.startBar + clip.lengthBars,
             steps: clip.steps.map(step => ({ ...step })),
           }
           return {
             tracks: s.tracks.map(t => t.id === trackId
-              ? { ...t, clips: [...t.clips, newClip] }
-              : t
-            ),
+              ? { ...t, clips: [...t.clips, newClip] } : t),
             selectedClipId: newClip.id,
           }
         }),
@@ -289,7 +277,7 @@ export const useProjectStore = create<ProjectState>()(
           return {
             tracks: s.tracks.map(t => {
               if (t.id === fromTrackId) return { ...t, clips: t.clips.filter(c => c.id !== clipId) }
-              if (t.id === toTrackId) return { ...t, clips: [...t.clips, { ...clip, color: t.color }] }
+              if (t.id === toTrackId)   return { ...t, clips: [...t.clips, { ...clip, color: t.color }] }
               return t
             })
           }
@@ -316,18 +304,14 @@ export const useProjectStore = create<ProjectState>()(
           else if (selectedTrackId) removeTrack(selectedTrackId)
         },
 
-        addFX: (trackId, device) => set((s) => ({
+        addFX:       (trackId, device)          => set((s) => ({
           tracks: s.tracks.map(t => t.id === trackId ? { ...t, fx: [...t.fx, device] } : t)
         })),
-
-        removeFX: (trackId, deviceId) => set((s) => ({
+        removeFX:    (trackId, deviceId)        => set((s) => ({
           tracks: s.tracks.map(t => t.id === trackId
-            ? { ...t, fx: t.fx.filter(d => d.id !== deviceId) }
-            : t
-          )
+            ? { ...t, fx: t.fx.filter(d => d.id !== deviceId) } : t)
         })),
-
-        reorderFX: (trackId, from, to) => set((s) => ({
+        reorderFX:   (trackId, from, to)        => set((s) => ({
           tracks: s.tracks.map(t => {
             if (t.id !== trackId) return t
             const fx = [...t.fx]
@@ -336,7 +320,6 @@ export const useProjectStore = create<ProjectState>()(
             return { ...t, fx }
           })
         })),
-
         updateFXParam: (trackId, deviceId, param, value) => set((s) => ({
           tracks: s.tracks.map(t => {
             if (t.id !== trackId) return t
@@ -347,9 +330,9 @@ export const useProjectStore = create<ProjectState>()(
           })
         })),
 
-        addMarker: (marker) => set((s) => ({ markers: [...s.markers, marker] })),
-        removeMarker: (id) => set((s) => ({ markers: s.markers.filter(m => m.id !== id) })),
-        updateMarker: (id, patch) => set((s) => ({
+        addMarker:    (marker)       => set((s) => ({ markers: [...s.markers, marker] })),
+        removeMarker: (id)           => set((s) => ({ markers: s.markers.filter(m => m.id !== id) })),
+        updateMarker: (id, patch)    => set((s) => ({
           markers: s.markers.map(m => m.id === id ? { ...m, ...patch } : m)
         })),
 
@@ -363,29 +346,39 @@ export const useProjectStore = create<ProjectState>()(
             const data = JSON.parse(json)
             set({
               projectName: data.projectName ?? 'Untitled Project',
-              bpm: data.bpm ?? 128,
-              bars: data.bars ?? 32,
+              bpm: data.bpm ?? 128, bars: data.bars ?? 32,
               tracks: (data.tracks ?? []).map((t: Track) => ({
                 ...t,
-                groupId: t.groupId ?? null,
-                collapsed: t.collapsed ?? false,
-                synthType: t.synthType ?? 'sawtooth',
+                groupId:    t.groupId    ?? null,
+                collapsed:  t.collapsed  ?? false,
+                synthType:  t.synthType  ?? 'sawtooth',
                 sampleName: t.sampleName ?? '',
-                drumVoice: t.drumVoice ?? 'membrane',
-                drumKit: t.drumKit ?? 'none',
-                muted: t.muted ?? false,
-                soloed: t.soloed ?? false,
+                drumVoice:  t.drumVoice  ?? 'membrane',
+                drumKit:    t.drumKit    ?? 'none',
+                muted:      t.muted      ?? false,
+                soloed:     t.soloed     ?? false,
+                volume:     t.volume     ?? 0,
+                tb303Cutoff:    t.tb303Cutoff    ?? 800,
+                tb303Resonance: t.tb303Resonance ?? 0.6,
+                tb303EnvMod:    t.tb303EnvMod    ?? 0.5,
+                tb303Decay:     t.tb303Decay     ?? 0.3,
+                tb303Accent:    t.tb303Accent    ?? 0.7,
+                tb303Wave:      t.tb303Wave      ?? 'sawtooth',
                 clips: (t.clips ?? []).map((c: Clip) => ({
                   ...c,
                   steps: c.steps?.length === 16
-                    ? c.steps.map((s: StepNote) => ({ ...s, duration: s.duration ?? '16n' }))
+                    ? c.steps.map((s: StepNote) => ({
+                        ...s,
+                        duration: s.duration ?? '16n',
+                        slide: s.slide ?? false,
+                        accent: s.accent ?? false,
+                      }))
                     : makeSteps(),
                   stepRows: c.stepRows ?? 1,
                 })),
               })),
               markers: data.markers ?? [],
-              selectedTrackId: null,
-              selectedClipId: null,
+              selectedTrackId: null, selectedClipId: null,
             })
           } catch (e) {
             console.error('Invalid JSON', e)

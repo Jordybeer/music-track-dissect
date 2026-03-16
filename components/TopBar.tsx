@@ -8,6 +8,8 @@ interface Props {
   onToggleInspector: () => void
   rackOpen: boolean
   onToggleRack: () => void
+  faderOpen: boolean
+  onToggleFader: () => void
 }
 
 async function encodeProject(json: string): Promise<string> {
@@ -16,7 +18,6 @@ async function encodeProject(json: string): Promise<string> {
   writer.write(new TextEncoder().encode(json))
   writer.close()
   const buf = await new Response(stream.readable).arrayBuffer()
-  // Use Array.from instead of spread to avoid downlevelIteration requirement
   return btoa(Array.from(new Uint8Array(buf), b => String.fromCharCode(b)).join(''))
     .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '')
 }
@@ -33,7 +34,11 @@ async function decodeProject(b64: string): Promise<string> {
   return new TextDecoder().decode(buf)
 }
 
-export default function TopBar({ inspectorOpen, onToggleInspector, rackOpen, onToggleRack }: Props) {
+export default function TopBar({
+  inspectorOpen, onToggleInspector,
+  rackOpen, onToggleRack,
+  faderOpen, onToggleFader,
+}: Props) {
   const { bpm, bars, barWidth, setBpm, setBars, setBarWidth, exportJSON, importJSON, projectName, setProjectName } = useProjectStore()
   const fileRef = useRef<HTMLInputElement>(null)
   const [undoFlash, setUndoFlash] = useState(false)
@@ -102,7 +107,7 @@ export default function TopBar({ inspectorOpen, onToggleInspector, rackOpen, onT
   }
 
   const currentZoom = ZOOM_LEVELS.find(z => z.px === barWidth) ?? ZOOM_LEVELS[4]
-  const currentIdx = ZOOM_LEVELS.findIndex(z => z.px === barWidth)
+  const currentIdx  = ZOOM_LEVELS.findIndex(z => z.px === barWidth)
   const btnBase = 'px-3 py-2 text-xs rounded border transition-colors touch-manipulation min-h-[40px] flex items-center'
 
   return (
@@ -169,11 +174,20 @@ export default function TopBar({ inspectorOpen, onToggleInspector, rackOpen, onT
           >›</button>
         </div>
 
-        <div className="ml-auto flex items-center gap-2 shrink-0">
+        <div className="ml-auto flex items-center gap-1 shrink-0">
+          {/* Panel toggles */}
+          <button onClick={onToggleFader}
+            className={`${btnBase} ${ faderOpen ? 'bg-[#e8a020] text-black border-[#e8a020]' : 'bg-transparent text-gray-400 border-[#3a3a3a] hover:border-[#555]' }`}
+            title="Fader panel"
+          >≡</button>
           <button onClick={onToggleRack}
-            className={`${btnBase} ${ rackOpen ? 'bg-[#e8a020] text-black border-[#e8a020]' : 'bg-transparent text-gray-400 border-[#3a3a3a] hover:border-[#555]' }`}>FX</button>
+            className={`${btnBase} ${ rackOpen ? 'bg-[#e8a020] text-black border-[#e8a020]' : 'bg-transparent text-gray-400 border-[#3a3a3a] hover:border-[#555]' }`}
+            title="Device rack"
+          >FX</button>
           <button onClick={onToggleInspector}
-            className={`${btnBase} ${ inspectorOpen ? 'bg-[#e8a020] text-black border-[#e8a020]' : 'bg-transparent text-gray-400 border-[#3a3a3a] hover:border-[#555]' }`}>Insp</button>
+            className={`${btnBase} ${ inspectorOpen ? 'bg-[#e8a020] text-black border-[#e8a020]' : 'bg-transparent text-gray-400 border-[#3a3a3a] hover:border-[#555]' }`}
+            title="Inspector"
+          >Insp</button>
 
           <div className="w-px h-5 bg-[#3a3a3a]" />
 
@@ -190,8 +204,8 @@ export default function TopBar({ inspectorOpen, onToggleInspector, rackOpen, onT
             onClick={handleShare}
             title={shareFlash === 'done' ? 'Link copied!' : shareFlash === 'error' ? 'Failed' : 'Copy shareable link'}
             className={`${btnBase} font-bold border transition-colors ${
-              shareFlash === 'done'  ? 'bg-[#22c55e] text-black border-[#22c55e]' :
-              shareFlash === 'error' ? 'bg-red-500 text-white border-red-500' :
+              shareFlash === 'done'    ? 'bg-[#22c55e] text-black border-[#22c55e]' :
+              shareFlash === 'error'   ? 'bg-red-500 text-white border-red-500' :
               shareFlash === 'copying' ? 'bg-[#3a3a3a] text-white border-[#555] opacity-60' :
               'bg-[#e8a020] text-black border-[#e8a020] hover:bg-yellow-400'
             }`}
