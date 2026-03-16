@@ -42,7 +42,7 @@ const fxParamMap = new Map<string, any>()
 
 // Sidechain state: per deviceId, store { gainNode, analyser, rafId, amount, attack, release }
 const sidechainMap = new Map<string, {
-  gainNode: GainNode
+  gainNode: any
   analyser: AnalyserNode
   rafId: number
   amount: number
@@ -118,8 +118,8 @@ export function useAudioEngine(): AudioEngine {
   const fxIdMap = useRef<Map<string, string[]>>(new Map())
   const seqMap = useRef<Map<string, any>>(new Map())
   const partMap = useRef<Map<string, any>>(new Map())
-  // gainNode inserted before master for sidechain ducking
-  const sidechainGainMap = useRef<Map<string, GainNode>>(new Map())
+  // Tone.Volume node inserted before master for sidechain ducking
+  const sidechainGainMap = useRef<Map<string, any>>(new Map())
 
   const [transportState, setTransportState] = useState<TransportState>('stopped')
   const [position, setPosition] = useState('1:0:0')
@@ -196,11 +196,11 @@ export function useAudioEngine(): AudioEngine {
     } catch {}
   }
 
-  // Start a rAF-based sidechain follower: taps source instrument, ducks dest gainNode
+  // Start a rAF-based sidechain follower: taps source instrument, ducks dest Tone.Volume node
   function startSidechain(
     deviceId: string,
     sourceTrackId: string,
-    destGainNode: GainNode,
+    destGainNode: any,
     audioCtx: AudioContext,
     params: Record<string, string>
   ) {
@@ -213,7 +213,6 @@ export function useAudioEngine(): AudioEngine {
     const dataArr = new Float32Array(analyser.fftSize)
 
     try {
-      // Tap source instrument output
       const sourceNode: AudioNode = sourceInstr.output ?? sourceInstr._gainNode ?? (sourceInstr as any)
       sourceNode.connect(analyser)
     } catch { return }
@@ -237,11 +236,14 @@ export function useAudioEngine(): AudioEngine {
         const v = Math.abs(dataArr[i])
         if (v > peak) peak = v
       }
-      // Compute target gain: peak drives gain down
       const target = 1 - peak * sc.amount
       const coef = target < sc.currentGain ? attackCoef : releaseCoef
       sc.currentGain = sc.currentGain * coef + target * (1 - coef)
-      try { destGainNode.gain.value = Math.max(0, Math.min(1, sc.currentGain)) } catch {}
+      // Drive the Tone.Volume in dB: 0 = full, -Inf = silent; approximate with gain linear->dB
+      try {
+        const linearGain = Math.max(0.0001, Math.min(1, sc.currentGain))
+        destGainNode.volume.value = 20 * Math.log10(linearGain)
+      } catch {}
       sc.rafId = requestAnimationFrame(tick)
     }
     sc.rafId = requestAnimationFrame(tick)
@@ -264,7 +266,7 @@ export function useAudioEngine(): AudioEngine {
     const oldPart = partMap.current.get(track.id)
     if (oldPart) { try { oldPart.dispose() } catch {} }
     const oldGain = sidechainGainMap.current.get(track.id)
-    if (oldGain) { try { oldGain.disconnect() } catch {} }
+    if (oldGain) { try { oldGain.dispose() } catch {} }
 
     instrumentMap.current.delete(track.id)
     fxMap.current.delete(track.id)
@@ -300,13 +302,10 @@ export function useAudioEngine(): AudioEngine {
     fxMap.current.set(track.id, fxNodes)
     fxIdMap.current.set(track.id, fxIds)
 
-    // Create sidechain gain node (inserted just before master)
-    const audioCtx = Tone.getContext().rawContext as AudioContext
-    const scGain = audioCtx.createGain()
-    scGain.gain.value = 1
+    // Create Tone.Volume node for sidechain ducking, chained into master
+    const scGain = new Tone.Volume(0)
+    scGain.connect(masterRef.current)
     sidechainGainMap.current.set(track.id, scGain)
-    // Connect scGain -> master
-    try { scGain.connect((masterRef.current as any).input ?? (masterRef.current as any)._gainNode ?? (masterRef.current as any)) } catch {}
 
     if (isKitTrack) {
       const slotMap = new Map<DrumSlot, any>()
@@ -321,12 +320,12 @@ export function useAudioEngine(): AudioEngine {
         slotMap.set(slot, voice)
       }
       kitInstrMap.set(track.id, slotMap)
-      // Store a representative output for sidechain tapping
       instrumentOutputMap.set(track.id, slotMap.get('kick'))
 
       const clip = track.clips.find(c => c.steps && c.steps.length === 16)
       if (!clip) {
         if (sidechainDevice?.params.sourceTrackId) {
+          const audioCtx = Tone.getContext().rawContext as AudioContext
           startSidechain(sidechainDevice.id, sidechainDevice.params.sourceTrackId, scGain, audioCtx, sidechainDevice.params)
         }
         return
@@ -354,6 +353,7 @@ export function useAudioEngine(): AudioEngine {
       seqMap.current.set(track.id, seq)
 
       if (sidechainDevice?.params.sourceTrackId) {
+        const audioCtx = Tone.getContext().rawContext as AudioContext
         startSidechain(sidechainDevice.id, sidechainDevice.params.sourceTrackId, scGain, audioCtx, sidechainDevice.params)
       }
       return
@@ -372,6 +372,7 @@ export function useAudioEngine(): AudioEngine {
     try { last.connect(scGain) } catch {}
 
     if (sidechainDevice?.params.sourceTrackId) {
+      const audioCtx = Tone.getContext().rawContext as AudioContext
       startSidechain(sidechainDevice.id, sidechainDevice.params.sourceTrackId, scGain, audioCtx, sidechainDevice.params)
     }
 
@@ -422,7 +423,6 @@ export function useAudioEngine(): AudioEngine {
       if (kit) kit.forEach(v => applyFXParam(v?.envelope ?? v, param, value))
       else if (instr) applyFXParam(instr?.envelope ?? instr, param, value)
     } else if (node?._isSidechain) {
-      // Update sidechain live params
       const sc = sidechainMap.get(deviceId)
       if (sc) {
         if (param === 'amount')  sc.amount  = value

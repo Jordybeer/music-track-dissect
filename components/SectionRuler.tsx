@@ -163,11 +163,11 @@ export default function SectionRuler({ barWidth, headerW, bars, bodyRef, scrollL
               </div>
             ))}
 
-            {/* Playhead */}
+            {/* Playhead — left is absolute within the scrollable content div, no scrollLeft offset needed */}
             {playheadX > 0 && (
               <div
                 className="absolute top-0 h-full z-20 pointer-events-none"
-                style={{ left: playheadX - scrollLeft, width: 2, background: '#e8a020', boxShadow: '0 0 4px #e8a020aa' }}
+                style={{ left: playheadX, width: 2, background: '#e8a020', boxShadow: '0 0 4px #e8a020aa' }}
               >
                 <div style={{
                   position: 'absolute', top: 0, left: -4,
