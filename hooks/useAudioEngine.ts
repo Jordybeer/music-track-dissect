@@ -38,8 +38,7 @@ export function clearSample(trackId: string) {
   sampleBufferMap.delete(trackId)
 }
 
-// Maps deviceId -> param -> Tone Signal/param reference
-const fxParamMap = new Map<string, Record<string, any>>()
+const fxParamMap = new Map<string, any>()
 
 function applyFXParam(node: any, param: string, value: number) {
   try {
@@ -47,7 +46,7 @@ function applyFXParam(node: any, param: string, value: number) {
     if (n === 'wet' || n === 'mix') { if (node.wet) node.wet.value = value }
     else if (n === 'decay') { if (node.decay !== undefined) node.decay = value }
     else if (n === 'feedback') { if (node.feedback) node.feedback.value = value }
-    else if (n === 'delayTime' || n === 'time') { if (node.delayTime) node.delayTime.value = value }
+    else if (n === 'delaytime' || n === 'time') { if (node.delayTime) node.delayTime.value = value }
     else if (n === 'threshold') { if (node.threshold) node.threshold.value = value }
     else if (n === 'ratio') { if (node.ratio) node.ratio.value = value }
     else if (n === 'frequency' || n === 'freq') { if (node.frequency) node.frequency.value = value }
@@ -64,7 +63,7 @@ export function useAudioEngine(): AudioEngine {
   const masterRef = useRef<InstanceType<ToneModule['Volume']> | null>(null)
   const instrumentMap = useRef<Map<string, any>>(new Map())
   const fxMap = useRef<Map<string, any[]>>(new Map())
-  const fxIdMap = useRef<Map<string, string[]>>(new Map()) // trackId -> deviceId[]
+  const fxIdMap = useRef<Map<string, string[]>>(new Map())
   const seqMap = useRef<Map<string, any>>(new Map())
   const partMap = useRef<Map<string, any>>(new Map())
 
@@ -88,7 +87,6 @@ export function useAudioEngine(): AudioEngine {
     if (hasSample && (track.type === 'audio' || track.type === 'drum' || track.type === 'midi')) {
       const rawBuf = sampleBufferMap.get(track.id)!
       const audioBuf = await Tone.getContext().rawContext.decodeAudioData(rawBuf.slice(0))
-
       if (track.type === 'drum') {
         const noteMap: Record<string, AudioBuffer> = {}
         DRUM_SLOT_NOTES.forEach(n => { noteMap[n] = audioBuf })
@@ -100,16 +98,17 @@ export function useAudioEngine(): AudioEngine {
       return new Tone.Sampler(noteMap)
     }
 
-    // Rimshot voice: MetalSynth with tight high-freq settings
+    // Rimshot: MetalSynth — frequency must be set post-init (not in options)
     if (track.type === 'drum' && (track as any).drumVoice === 'rimshot') {
-      return new Tone.MetalSynth({
-        frequency: 400,
+      const synth = new Tone.MetalSynth({
         envelope: { attack: 0.001, decay: 0.08, release: 0.01 },
         harmonicity: 5.1,
         modulationIndex: 32,
         resonance: 4000,
         octaves: 1.5,
       })
+      synth.frequency.value = 400
+      return synth
     }
 
     switch (track.type) {
@@ -230,12 +229,9 @@ export function useAudioEngine(): AudioEngine {
       if (!step?.active) return
 
       const velocity = Math.max(0.05, (step.velocity ?? 100) / 127)
-
-      // Duration drives sample length: ghost = short (32n), full hit = longer duration
       const duration = step.duration ?? (hasSample || isDrum ? '32n' : '16n')
 
       if (isRimshot) {
-        // MetalSynth uses triggerAttackRelease with freq + duration
         try { instr.triggerAttackRelease('16n', time, velocity) } catch {}
         return
       }
@@ -251,11 +247,9 @@ export function useAudioEngine(): AudioEngine {
     seqMap.current.set(track.id, seq)
   }, [bars, getTone])
 
-  // Live param update — no need to rebuild the whole chain
   const updateFXParam = useCallback((trackId: string, deviceId: string, param: string, value: number) => {
     const node = fxParamMap.get(deviceId)
     if (node) applyFXParam(node, param, value)
-    // Persist to store
     useProjectStore.getState().updateFXParam(trackId, deviceId, param, String(value))
   }, [])
 
