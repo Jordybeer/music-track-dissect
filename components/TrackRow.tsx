@@ -22,7 +22,7 @@ interface CtxMenu { clipId: string; x: number; y: number }
 
 function DraggableClip({
   clip, track, barWidth, isSelected,
-  onSelect, onDoubleClick, onCtxMenu,
+  onSelect, onCtxMenu,
   isEditing, editingLabel, onLabelChange, onLabelSubmit, onLabelKeyDown,
 }: {
   clip: Clip
@@ -30,7 +30,6 @@ function DraggableClip({
   barWidth: number
   isSelected: boolean
   onSelect: () => void
-  onDoubleClick: () => void
   onCtxMenu: (x: number, y: number) => void
   isEditing: boolean
   editingLabel: string
@@ -47,8 +46,11 @@ function DraggableClip({
   const isResizing = useRef(false)
   const resizeState = useRef<{ startX: number; origLen: number } | null>(null)
   const [resizeOffset, setResizeOffset] = useState(0)
+
+  // Touch: long-press OR tap (no drag) → context menu
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const touchOrigin = useRef<{ x: number; y: number } | null>(null)
+  const touchMoved = useRef(false)
 
   function onDragPointerDown(e: React.PointerEvent) {
     if (isResizing.current) return
@@ -99,19 +101,33 @@ function DraggableClip({
 
   function onTouchStart(e: React.TouchEvent) {
     touchOrigin.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }
+    touchMoved.current = false
+    // Long press → context menu
     longPressTimer.current = setTimeout(() => {
-      if (touchOrigin.current) onCtxMenu(touchOrigin.current.x, touchOrigin.current.y)
-    }, 600)
+      if (!touchMoved.current && touchOrigin.current) {
+        onCtxMenu(touchOrigin.current.x, touchOrigin.current.y)
+      }
+    }, 500)
   }
   function onTouchMove(e: React.TouchEvent) {
     if (!touchOrigin.current) return
     const dx = Math.abs(e.touches[0].clientX - touchOrigin.current.x)
     const dy = Math.abs(e.touches[0].clientY - touchOrigin.current.y)
-    if (dx > 10 || dy > 10) { if (longPressTimer.current) clearTimeout(longPressTimer.current); touchOrigin.current = null }
+    if (dx > 8 || dy > 8) {
+      touchMoved.current = true
+      if (longPressTimer.current) clearTimeout(longPressTimer.current)
+    }
   }
-  function onTouchEnd() {
+  function onTouchEnd(e: React.TouchEvent) {
     if (longPressTimer.current) clearTimeout(longPressTimer.current)
+    // Tap (no drag, no long press fired) → open context menu
+    if (!touchMoved.current && touchOrigin.current) {
+      const { x, y } = touchOrigin.current
+      e.preventDefault()
+      onCtxMenu(x, y)
+    }
     touchOrigin.current = null
+    touchMoved.current = false
   }
 
   const isActiveDrag = dragOffset !== 0
@@ -153,7 +169,6 @@ function DraggableClip({
       onPointerMove={onDragPointerMove}
       onPointerUp={onDragPointerUp}
       onPointerCancel={() => { dragState.current = null; setDragOffset(0) }}
-      onDoubleClick={(e) => { e.stopPropagation(); onDoubleClick() }}
       onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onCtxMenu(e.clientX, e.clientY) }}
       onTouchStart={onTouchStart}
       onTouchMove={onTouchMove}
@@ -183,7 +198,6 @@ function DraggableClip({
         onPointerMove={onResizePointerMove}
         onPointerUp={onResizePointerUp}
         onPointerCancel={() => { resizeState.current = null; isResizing.current = false; setResizeOffset(0) }}
-        onDoubleClick={(e) => e.stopPropagation()}
       >
         <div className="w-0.5 h-4 rounded-full bg-white/30 group-hover:bg-white/70 transition-colors" />
       </div>
@@ -289,9 +303,7 @@ export default function TrackRow({ track, barWidth, headerW, indent = 0 }: Props
           onClick={(e) => { e.stopPropagation(); toggleMute(track.id) }}
           title="Mute"
           className={`text-[10px] font-bold px-1 py-0.5 rounded touch-manipulation shrink-0 transition-colors ${
-            track.muted
-              ? 'bg-[#e8a020] text-black'
-              : 'text-gray-500 hover:text-[#e8a020]'
+            track.muted ? 'bg-[#e8a020] text-black' : 'text-gray-500 hover:text-[#e8a020]'
           }`}
         >M</button>
 
@@ -300,9 +312,7 @@ export default function TrackRow({ track, barWidth, headerW, indent = 0 }: Props
           onClick={(e) => { e.stopPropagation(); toggleSolo(track.id) }}
           title="Solo"
           className={`text-[10px] font-bold px-1 py-0.5 rounded touch-manipulation shrink-0 transition-colors ${
-            track.soloed
-              ? 'bg-[#e8a020] text-black'
-              : 'text-gray-500 hover:text-[#e8a020]'
+            track.soloed ? 'bg-[#e8a020] text-black' : 'text-gray-500 hover:text-[#e8a020]'
           }`}
         >S</button>
 
@@ -330,7 +340,6 @@ export default function TrackRow({ track, barWidth, headerW, indent = 0 }: Props
             clip={clip} track={track} barWidth={barWidth}
             isSelected={selectedClipId === clip.id}
             onSelect={() => { selectTrack(track.id); selectClip(selectedClipId === clip.id ? null : clip.id); setCtxMenu(null) }}
-            onDoubleClick={() => { setEditingClipId(clip.id); setEditingLabel(clip.label) }}
             onCtxMenu={(x, y) => setCtxMenu({ clipId: clip.id, x, y })}
             isEditing={editingClipId === clip.id}
             editingLabel={editingLabel}
@@ -347,23 +356,33 @@ export default function TrackRow({ track, barWidth, headerW, indent = 0 }: Props
       {/* Context menu */}
       {ctxMenu && (
         <div
-          className="fixed z-50 bg-[#2a2a2a] border border-[#3a3a3a] rounded shadow-2xl py-1 min-w-[160px] animate-fade-in"
-          style={{ top: ctxMenu.y, left: Math.min(ctxMenu.x, (typeof window !== 'undefined' ? window.innerWidth : 400) - 180) }}
+          className="fixed z-50 bg-[#2a2a2a] border border-[#3a3a3a] rounded-xl shadow-2xl py-1 min-w-[200px] animate-fade-in"
+          style={{
+            top: Math.min(ctxMenu.y, (typeof window !== 'undefined' ? window.innerHeight : 600) - 160),
+            left: Math.min(ctxMenu.x, (typeof window !== 'undefined' ? window.innerWidth : 400) - 210),
+          }}
           onClick={(e) => e.stopPropagation()}
         >
-          <button className="w-full text-left px-4 py-3 text-sm hover:bg-[#3a3a3a] text-white flex justify-between touch-manipulation"
-            onClick={() => { duplicateClip(track.id, ctxMenu.clipId); setCtxMenu(null) }}>
-            Duplicate <span className="text-gray-500 text-xs">D</span>
-          </button>
-          <button className="w-full text-left px-4 py-3 text-sm hover:bg-[#3a3a3a] text-white flex justify-between touch-manipulation"
-            onClick={() => { const c = track.clips.find(c => c.id === ctxMenu.clipId); if (c) { setEditingClipId(c.id); setEditingLabel(c.label) } setCtxMenu(null) }}>
-            Rename <span className="text-gray-500 text-xs">dbl-tap</span>
-          </button>
+          <div className="px-4 py-2 text-[11px] text-gray-500 font-medium border-b border-[#3a3a3a]">
+            {track.clips.find(c => c.id === ctxMenu.clipId)?.label ?? 'Clip'}
+          </div>
+          <button
+            className="w-full text-left px-4 py-3.5 text-sm hover:bg-[#3a3a3a] text-white touch-manipulation"
+            onClick={() => { duplicateClip(track.id, ctxMenu.clipId); setCtxMenu(null) }}
+          >Duplicate</button>
+          <button
+            className="w-full text-left px-4 py-3.5 text-sm hover:bg-[#3a3a3a] text-white touch-manipulation"
+            onClick={() => {
+              const c = track.clips.find(c => c.id === ctxMenu.clipId)
+              if (c) { setEditingClipId(c.id); setEditingLabel(c.label) }
+              setCtxMenu(null)
+            }}
+          >Rename</button>
           <div className="border-t border-[#3a3a3a] my-1" />
-          <button className="w-full text-left px-4 py-3 text-sm hover:bg-[#3a3a3a] text-red-400 touch-manipulation"
-            onClick={() => { removeClip(track.id, ctxMenu.clipId); setCtxMenu(null) }}>
-            Delete
-          </button>
+          <button
+            className="w-full text-left px-4 py-3.5 text-sm hover:bg-[#3a3a3a] text-red-400 touch-manipulation"
+            onClick={() => { removeClip(track.id, ctxMenu.clipId); setCtxMenu(null) }}
+          >Delete</button>
         </div>
       )}
 
