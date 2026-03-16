@@ -7,9 +7,12 @@ interface Props {
   barWidth: number
   bars: number
   bpm: number
+  scrollLeft?: number
 }
 
-export default function WaveformTrack({ barWidth, bars, bpm }: Props) {
+const AUDIO_ACCEPT = 'audio/*,.mp3,.wav,.flac,.aac,.ogg,.m4a,.aiff,.aif'
+
+export default function WaveformTrack({ barWidth, bars, bpm, scrollLeft = 0 }: Props) {
   const [audioBuffer, setAudioBuffer] = useState<AudioBuffer | null>(null)
   const [fileName, setFileName] = useState('')
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -50,14 +53,11 @@ export default function WaveformTrack({ barWidth, bars, bpm }: Props) {
       ctx.stroke()
     }
 
-    // Calculate how many audio samples cover the full project (bars * secondsPerBar)
     const secondsPerBar = (60 / bpm) * 4
     const totalSeconds = bars * secondsPerBar
     const sampleRate = audioBuffer.sampleRate
     const channelData = audioBuffer.getChannelData(0)
     const totalSamples = audioBuffer.length
-
-    // How many audio samples map to one canvas pixel
     const samplesPerPixel = (Math.min(totalSamples, Math.floor(totalSeconds * sampleRate))) / W
 
     ctx.beginPath()
@@ -82,7 +82,6 @@ export default function WaveformTrack({ barWidth, bars, bpm }: Props) {
     }
     ctx.stroke()
 
-    // Draw centre line
     ctx.beginPath()
     ctx.strokeStyle = '#3a3a3a'
     ctx.lineWidth = 1
@@ -98,7 +97,7 @@ export default function WaveformTrack({ barWidth, bars, bpm }: Props) {
         className="shrink-0 flex items-center gap-2 px-2 border-r border-[#3a3a3a]"
         style={{ width: HEADER_W, borderLeft: '3px solid #22c55e' }}
       >
-        <input ref={fileRef} type="file" accept="audio/*" className="hidden" onChange={handleFile} />
+        <input ref={fileRef} type="file" accept={AUDIO_ACCEPT} className="hidden" onChange={handleFile} />
         <button
           onClick={() => fileRef.current?.click()}
           className="text-[10px] text-[#22c55e] hover:text-white border border-[#22c55e]/40 hover:border-[#22c55e] rounded px-2 py-1 transition-colors touch-manipulation shrink-0"
@@ -116,7 +115,7 @@ export default function WaveformTrack({ barWidth, bars, bpm }: Props) {
         )}
       </div>
 
-      {/* Waveform canvas */}
+      {/* Waveform canvas — scrolls in sync via transform */}
       <div className="flex-1 overflow-hidden relative">
         {audioBuffer ? (
           <canvas
@@ -124,7 +123,11 @@ export default function WaveformTrack({ barWidth, bars, bpm }: Props) {
             width={totalWidth}
             height={56}
             className="absolute top-0 left-0 h-full"
-            style={{ width: totalWidth, imageRendering: 'pixelated' }}
+            style={{
+              width: totalWidth,
+              transform: `translateX(-${scrollLeft}px)`,
+              imageRendering: 'pixelated',
+            }}
           />
         ) : (
           <div className="absolute inset-0 flex items-center px-4">

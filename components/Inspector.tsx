@@ -23,6 +23,8 @@ const SYNTH_TYPES: { value: SynthType; label: string }[] = [
   { value: 'amsine',   label: 'AM Sine' },
 ]
 
+const AUDIO_ACCEPT = 'audio/*,.mp3,.wav,.flac,.aac,.ogg,.m4a,.aiff,.aif'
+
 function uid() { return Math.random().toString(36).slice(2, 10) }
 
 interface Props { onClose: () => void }
@@ -70,12 +72,11 @@ export default function Inspector({ onClose }: Props) {
       ) : (
         <div className="flex-1 overflow-y-auto">
 
-          {/* ── SOUND SOURCE ── midi synth picker + sample upload ─────────── */}
+          {/* ── SOUND SOURCE ── */}
           {(track.type === 'midi' || track.type === 'audio' || track.type === 'drum') && (
             <div className="px-3 py-2.5 border-b border-[#3a3a3a] bg-[#1a1e1a] space-y-2">
               <label className="text-[10px] text-[#22c55e] font-semibold uppercase tracking-wider block">Sound Source</label>
 
-              {/* Synth type — midi only */}
               {track.type === 'midi' && (
                 <div>
                   <label className="text-[10px] text-gray-500 block mb-1">Oscillator</label>
@@ -97,14 +98,13 @@ export default function Inspector({ onClose }: Props) {
                 </div>
               )}
 
-              {/* Sample upload — audio + drum tracks */}
               {(track.type === 'audio' || track.type === 'drum') && (
                 <div>
                   <label className="text-[10px] text-gray-500 block mb-1">Sample</label>
                   <input
                     ref={sampleRef}
                     type="file"
-                    accept="audio/*"
+                    accept={AUDIO_ACCEPT}
                     className="hidden"
                     onChange={handleSampleUpload}
                   />
@@ -120,11 +120,7 @@ export default function Inspector({ onClose }: Props) {
                   </button>
                   {track.sampleName && (
                     <button
-                      onClick={() => {
-                        updateTrack(track.id, { sampleName: '' })
-                        // Don't delete from sampleBufferMap here — engine will
-                        // fall back to synth on next play/sync automatically
-                      }}
+                      onClick={() => updateTrack(track.id, { sampleName: '' })}
                       className="text-[9px] text-gray-600 hover:text-red-400 mt-0.5 touch-manipulation"
                     >
                       × clear sample
