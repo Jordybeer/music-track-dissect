@@ -118,7 +118,7 @@ export function useAudioEngine(): AudioEngine {
   const fxIdMap = useRef<Map<string, string[]>>(new Map())
   const seqMap = useRef<Map<string, any>>(new Map())
   const partMap = useRef<Map<string, any>>(new Map())
-  // Tone.Volume node inserted before master for sidechain ducking
+  // Tone.Volume node inserted before master for per-track mute/solo/sidechain
   const sidechainGainMap = useRef<Map<string, any>>(new Map())
 
   const [transportState, setTransportState] = useState<TransportState>('stopped')
@@ -239,7 +239,6 @@ export function useAudioEngine(): AudioEngine {
       const target = 1 - peak * sc.amount
       const coef = target < sc.currentGain ? attackCoef : releaseCoef
       sc.currentGain = sc.currentGain * coef + target * (1 - coef)
-      // Drive the Tone.Volume in dB: 0 = full, -Inf = silent; approximate with gain linear->dB
       try {
         const linearGain = Math.max(0.0001, Math.min(1, sc.currentGain))
         destGainNode.volume.value = 20 * Math.log10(linearGain)
@@ -302,9 +301,11 @@ export function useAudioEngine(): AudioEngine {
     fxMap.current.set(track.id, fxNodes)
     fxIdMap.current.set(track.id, fxIds)
 
-    // Create Tone.Volume node for sidechain ducking, chained into master
+    // Tone.Volume node for mute/solo/sidechain ducking, chained into master
     const scGain = new Tone.Volume(0)
     scGain.connect(masterRef.current)
+    // Apply mute state immediately
+    if (track.muted) scGain.volume.value = -Infinity
     sidechainGainMap.current.set(track.id, scGain)
 
     if (isKitTrack) {
@@ -414,6 +415,19 @@ export function useAudioEngine(): AudioEngine {
     seq.loop = true
     seqMap.current.set(track.id, seq)
   }, [bars, getTone])
+
+  // Apply mute/solo changes live without full resync
+  useEffect(() => {
+    if (!toneRef.current) return
+    const soloedTracks = tracks.filter(t => t.soloed)
+    const hasSolo = soloedTracks.length > 0
+    tracks.forEach(track => {
+      const scGain = sidechainGainMap.current.get(track.id)
+      if (!scGain) return
+      const shouldMute = track.muted || (hasSolo && !track.soloed)
+      scGain.volume.value = shouldMute ? -Infinity : 0
+    })
+  }, [tracks])
 
   const updateFXParam = useCallback((trackId: string, deviceId: string, param: string, value: number) => {
     const node = fxParamMap.get(deviceId)

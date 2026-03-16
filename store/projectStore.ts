@@ -64,6 +64,8 @@ export interface Track {
   sampleName: string
   drumVoice: DrumVoice
   drumKit: DrumKit
+  muted: boolean
+  soloed: boolean
 }
 
 export interface SectionMarker {
@@ -107,6 +109,8 @@ export interface ProjectState {
   updateTrack: (id: string, patch: Partial<Track>) => void
   setGroupId: (trackId: string, groupId: string | null) => void
   toggleCollapse: (groupId: string) => void
+  toggleMute: (trackId: string) => void
+  toggleSolo: (trackId: string) => void
   addClip: (trackId: string, clip: Clip) => void
   removeClip: (trackId: string, clipId: string) => void
   updateClip: (trackId: string, clipId: string, patch: Partial<Clip>) => void
@@ -183,6 +187,8 @@ export const useProjectStore = create<ProjectState>()(
             sampleName: '',
             drumVoice: 'membrane',
             drumKit: 'none',
+            muted: false,
+            soloed: false,
           }]
         })),
 
@@ -214,6 +220,30 @@ export const useProjectStore = create<ProjectState>()(
         toggleCollapse: (groupId) => set((s) => ({
           tracks: s.tracks.map(t => t.id === groupId ? { ...t, collapsed: !t.collapsed } : t)
         })),
+
+        toggleMute: (trackId) => set((s) => ({
+          tracks: s.tracks.map(t => t.id === trackId ? { ...t, muted: !t.muted } : t)
+        })),
+
+        toggleSolo: (trackId) => set((s) => {
+          const track = s.tracks.find(t => t.id === trackId)
+          if (!track) return s
+          const willSolo = !track.soloed
+          if (willSolo) {
+            // Solo this track: mute all others (except group tracks)
+            return {
+              tracks: s.tracks.map(t => ({
+                ...t,
+                soloed: t.id === trackId,
+              }))
+            }
+          } else {
+            // Un-solo: clear all solos
+            return {
+              tracks: s.tracks.map(t => ({ ...t, soloed: false }))
+            }
+          }
+        }),
 
         addClip: (trackId, clip) => set((s) => ({
           tracks: s.tracks.map(t => t.id === trackId ? { ...t, clips: [...t.clips, clip] } : t)
@@ -343,6 +373,8 @@ export const useProjectStore = create<ProjectState>()(
                 sampleName: t.sampleName ?? '',
                 drumVoice: t.drumVoice ?? 'membrane',
                 drumKit: t.drumKit ?? 'none',
+                muted: t.muted ?? false,
+                soloed: t.soloed ?? false,
                 clips: (t.clips ?? []).map((c: Clip) => ({
                   ...c,
                   steps: c.steps?.length === 16

@@ -194,7 +194,8 @@ function DraggableClip({
 export default function TrackRow({ track, barWidth, headerW, indent = 0 }: Props) {
   const {
     selectTrack, selectClip, selectedTrackId, selectedClipId,
-    removeTrack, removeClip, addClip, setGroupId, updateTrack, updateClip, duplicateClip
+    removeTrack, removeClip, addClip, setGroupId, updateTrack, updateClip, duplicateClip,
+    toggleMute, toggleSolo,
   } = useProjectStore()
   const isSelected = selectedTrackId === track.id
   const [isAdding, setIsAdding] = useState(false)
@@ -224,11 +225,8 @@ export default function TrackRow({ track, barWidth, headerW, indent = 0 }: Props
     setClipLabel('')
   }
 
-  // Tap empty clip zone to open add-clip sheet
   function handleZoneTap(e: React.MouseEvent<HTMLDivElement>) {
-    // Only fire if click landed on the zone itself (not a clip child)
     if (e.target !== e.currentTarget) return
-    // Estimate which bar was tapped
     const rect = e.currentTarget.getBoundingClientRect()
     const x = e.clientX - rect.left
     const bar = Math.max(1, Math.ceil(x / barWidth))
@@ -252,7 +250,7 @@ export default function TrackRow({ track, barWidth, headerW, indent = 0 }: Props
     >
       {/* Track header */}
       <div
-        className="shrink-0 flex items-center gap-1.5 px-1.5 border-r border-[#3a3a3a] cursor-pointer relative min-h-[48px]"
+        className="shrink-0 flex items-center gap-1 px-1.5 border-r border-[#3a3a3a] cursor-pointer relative min-h-[48px]"
         style={{
           width: headerW,
           borderLeft: indent > 0 ? `${indent}px solid #a855f7` : `3px solid ${track.color}`,
@@ -284,21 +282,46 @@ export default function TrackRow({ track, barWidth, headerW, indent = 0 }: Props
             ))}
           </div>
         )}
-        <span className="text-xs font-medium truncate flex-1 select-none">{track.name}</span>
+        <span className="text-xs font-medium truncate flex-1 select-none min-w-0">{track.name}</span>
+
+        {/* Mute button */}
+        <button
+          onClick={(e) => { e.stopPropagation(); toggleMute(track.id) }}
+          title="Mute"
+          className={`text-[10px] font-bold px-1 py-0.5 rounded touch-manipulation shrink-0 transition-colors ${
+            track.muted
+              ? 'bg-[#e8a020] text-black'
+              : 'text-gray-500 hover:text-[#e8a020]'
+          }`}
+        >M</button>
+
+        {/* Solo button */}
+        <button
+          onClick={(e) => { e.stopPropagation(); toggleSolo(track.id) }}
+          title="Solo"
+          className={`text-[10px] font-bold px-1 py-0.5 rounded touch-manipulation shrink-0 transition-colors ${
+            track.soloed
+              ? 'bg-[#e8a020] text-black'
+              : 'text-gray-500 hover:text-[#e8a020]'
+          }`}
+        >S</button>
+
         {track.groupId && (
           <button onClick={(e) => { e.stopPropagation(); setGroupId(track.id, null) }}
-            className="text-[#a855f7] hover:text-white p-2 shrink-0 touch-manipulation">↑</button>
+            className="text-[#a855f7] hover:text-white p-1 shrink-0 touch-manipulation">↑</button>
         )}
         <button onClick={(e) => { e.stopPropagation(); setIsAdding(!isAdding) }}
-          className="text-gray-500 hover:text-white p-2 shrink-0 touch-manipulation text-base leading-none">+</button>
+          className="text-gray-500 hover:text-white p-1 shrink-0 touch-manipulation text-base leading-none">+</button>
         <button onClick={(e) => { e.stopPropagation(); removeTrack(track.id) }}
-          className="text-gray-600 hover:text-red-400 p-2 shrink-0 touch-manipulation">×</button>
+          className="text-gray-600 hover:text-red-400 p-1 shrink-0 touch-manipulation">×</button>
       </div>
 
-      {/* Clip zone — tap empty area to add */}
+      {/* Clip zone */}
       <div
         ref={setDropRef}
-        className="flex-1 relative min-h-[48px] overflow-visible cursor-cell"
+        className={`flex-1 relative min-h-[48px] overflow-visible cursor-cell transition-opacity ${
+          track.muted ? 'opacity-40' : track.soloed ? 'opacity-100' : ''
+        }`}
         onClick={handleZoneTap}
       >
         {track.clips.map((clip) => (
