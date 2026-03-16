@@ -1,6 +1,6 @@
 'use client'
 
-import { RefObject, useCallback, useEffect, useRef, useState } from 'react'
+import { Dispatch, RefObject, SetStateAction, useCallback, useEffect, useRef, useState } from 'react'
 import { useProjectStore, uid } from '@/store/projectStore'
 
 const SECTION_COLORS = ['#e8a020', '#3b82f6', '#22c55e', '#ef4444', '#a855f7', '#06b6d4', '#f43f5e']
@@ -11,9 +11,12 @@ interface Props {
   headerW: number
   bars: number
   bodyRef: RefObject<HTMLDivElement | null>
+  scrollLeft: number
+  setScrollLeft: Dispatch<SetStateAction<number>>
+  playheadBar: number
 }
 
-export default function SectionRuler({ barWidth, headerW, bars, bodyRef }: Props) {
+export default function SectionRuler({ barWidth, headerW, bars, bodyRef, scrollLeft, setScrollLeft, playheadBar }: Props) {
   const { markers, addMarker, removeMarker, updateMarker } = useProjectStore()
   const [adding, setAdding] = useState(false)
   const [newBar, setNewBar] = useState(1)
@@ -26,27 +29,28 @@ export default function SectionRuler({ barWidth, headerW, bars, bodyRef }: Props
   const btnRef = useRef<HTMLButtonElement>(null)
   const [popupPos, setPopupPos] = useState({ top: 0, left: 0 })
 
+  // Ruler scroll → body + state
   const onRulerScroll = useCallback(() => {
     if (syncingRef.current || !rulerScrollRef.current || !bodyRef.current) return
     syncingRef.current = true
-    bodyRef.current.scrollLeft = rulerScrollRef.current.scrollLeft
+    const sl = rulerScrollRef.current.scrollLeft
+    bodyRef.current.scrollLeft = sl
+    setScrollLeft(sl)
     syncingRef.current = false
-  }, [bodyRef])
+  }, [bodyRef, setScrollLeft])
 
-  if (typeof window !== 'undefined' && bodyRef.current && rulerScrollRef.current) {
-    if (!syncingRef.current) rulerScrollRef.current.scrollLeft = bodyRef.current.scrollLeft
-  }
+  // Body scroll → ruler
+  useEffect(() => {
+    if (syncingRef.current || !rulerScrollRef.current) return
+    rulerScrollRef.current.scrollLeft = scrollLeft
+  }, [scrollLeft])
 
-  // Close popup on outside click
   useEffect(() => {
     if (!adding) return
     function handler(e: MouseEvent) {
-      if (btnRef.current && !btnRef.current.closest('[data-section-popup]')?.contains(e.target as Node)) {
-        // check if click is inside popup portal
-        const portal = document.getElementById('section-popup-portal')
-        if (portal && portal.contains(e.target as Node)) return
-        setAdding(false)
-      }
+      const portal = document.getElementById('section-popup-portal')
+      if (portal && portal.contains(e.target as Node)) return
+      setAdding(false)
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
@@ -68,7 +72,7 @@ export default function SectionRuler({ barWidth, headerW, bars, bodyRef }: Props
   function handleRulerTap(e: React.MouseEvent<HTMLDivElement>) {
     if (e.target !== e.currentTarget) return
     const rect = e.currentTarget.getBoundingClientRect()
-    const bar = Math.max(1, Math.ceil((e.clientX - rect.left) / barWidth))
+    const bar = Math.max(1, Math.ceil((e.clientX - rect.left + scrollLeft) / barWidth))
     setNewBar(bar)
     if (btnRef.current) {
       const brect = btnRef.current.getBoundingClientRect()
@@ -77,30 +81,32 @@ export default function SectionRuler({ barWidth, headerW, bars, bodyRef }: Props
     setAdding(true)
   }
 
+  const playheadX = playheadBar * barWidth
+
   return (
     <>
       <div className="flex shrink-0 border-b border-[#3a3a3a] overflow-hidden" style={{ height: 28 }}>
-        {/* Fixed header */}
         <div
-          className="shrink-0 flex items-center justify-center border-r border-[#3a3a3a] bg-[#1e1e1e] relative"
+          className="shrink-0 flex items-center justify-center border-r border-[#3a3a3a] bg-[#1e1e1e]"
           style={{ width: headerW }}
         >
           <button
             ref={btnRef}
-            data-section-popup
             onClick={openAdding}
             className="text-[10px] text-gray-500 hover:text-[#e8a020] px-2 transition-colors touch-manipulation"
           >+ Section</button>
         </div>
 
-        {/* Scrollable ruler */}
         <div
           ref={rulerScrollRef}
-          className="flex-1 overflow-x-hidden relative bg-[#171717] cursor-crosshair"
+          className="flex-1 overflow-x-auto relative bg-[#171717] cursor-crosshair"
+          style={{ scrollbarWidth: 'none' }}
           onScroll={onRulerScroll}
           onClick={handleRulerTap}
         >
           <div className="relative h-full" style={{ width: bars * barWidth }}>
+
+            {/* Bar lines + numbers */}
             {Array.from({ length: bars }, (_, i) => (
               <div
                 key={i}
@@ -112,14 +118,14 @@ export default function SectionRuler({ barWidth, headerW, bars, bodyRef }: Props
                   style={{ width: 1, background: i % 4 === 0 ? '#3a3a3a' : '#242424' }}
                 />
                 {i % 4 === 0 && (
-                  <span
-                    className="absolute top-0.5 left-0.5 text-[8px] text-gray-600 leading-none select-none pointer-events-none"
-                    style={{ fontSize: 8 }}
-                  >{i + 1}</span>
+                  <span className="absolute top-0.5 left-0.5 text-[8px] text-gray-600 leading-none select-none pointer-events-none">
+                    {i + 1}
+                  </span>
                 )}
               </div>
             ))}
 
+            {/* Section markers */}
             {markers.map((marker) => (
               <div
                 key={marker.id}
@@ -156,11 +162,27 @@ export default function SectionRuler({ barWidth, headerW, bars, bodyRef }: Props
                 )}
               </div>
             ))}
+
+            {/* Playhead */}
+            {playheadX > 0 && (
+              <div
+                className="absolute top-0 h-full z-20 pointer-events-none"
+                style={{ left: playheadX - scrollLeft, width: 2, background: '#e8a020', boxShadow: '0 0 4px #e8a020aa' }}
+              >
+                <div style={{
+                  position: 'absolute', top: 0, left: -4,
+                  width: 0, height: 0,
+                  borderLeft: '5px solid transparent',
+                  borderRight: '5px solid transparent',
+                  borderTop: '7px solid #e8a020',
+                }} />
+              </div>
+            )}
+
           </div>
         </div>
       </div>
 
-      {/* Popup rendered at root level to escape overflow:hidden */}
       {adding && (
         <div
           id="section-popup-portal"
