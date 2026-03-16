@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import { useProjectStore, uid, FXDevice } from '@/store/projectStore'
 import { useSortable, SortableContext, horizontalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -87,7 +87,6 @@ function ParamSlider({ param, value, color, onChange }: {
   )
 }
 
-// Sidechain source selector card extras
 function SidechainSourceRow({ device, trackId }: { device: FXDevice; trackId: string }) {
   const { tracks, updateFXParam } = useProjectStore()
   const sources = tracks.filter(t => t.id !== trackId && t.type !== 'group')
@@ -149,9 +148,9 @@ function DeviceCard({ device, trackId, index, onExpand }: {
       >
         <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: color }} />
         <span className="text-[10px] font-bold truncate flex-1" style={{ color }}>{device.name}</span>
-        <button title="Expand" onClick={() => onExpand(device)}
+        <button title="Open 303 panel" onClick={() => onExpand(device)}
           className="text-gray-500 hover:text-white text-[10px] shrink-0 px-0.5"
-          onPointerDown={(e) => e.stopPropagation()}>&#10562;</button>
+          onPointerDown={(e) => e.stopPropagation()}>&#9645;</button>
         <button onClick={() => removeFX(trackId, device.id)}
           className="text-gray-600 hover:text-red-400 text-[10px] shrink-0"
           onPointerDown={(e) => e.stopPropagation()}>×</button>
@@ -173,9 +172,90 @@ function DeviceCard({ device, trackId, index, onExpand }: {
   )
 }
 
-function FXExpandWindow({ device, trackId, onClose }: { device: FXDevice; trackId: string; onClose: () => void }) {
+// ─── 303-style rotary knob ────────────────────────────────────────────────────
+function Knob({ param, value, color, size = 64, onChange }: {
+  param: { key: string; label: string; min: number; max: number; def: number; step?: number }
+  value: number
+  color: string
+  size?: number
+  onChange: (v: number) => void
+}) {
+  const dragStart = useRef<{ y: number; val: number } | null>(null)
+  const r = size / 2
+  const cx = r, cy = r
+  const trackR = r - 6
+  // 270-degree arc: from 225° to -45° (clockwise)
+  const START_DEG = 225
+  const END_DEG = 495 // 225 + 270
+  const pct = (value - param.min) / (param.max - param.min)
+  const arcDeg = pct * 270
+
+  function polarToXY(deg: number, radius: number) {
+    const rad = ((deg - 90) * Math.PI) / 180
+    return { x: cx + radius * Math.cos(rad), y: cy + radius * Math.sin(rad) }
+  }
+
+  function describeArc(startDeg: number, endDeg: number, radius: number) {
+    const s = polarToXY(startDeg, radius)
+    const e = polarToXY(endDeg, radius)
+    const large = endDeg - startDeg > 180 ? 1 : 0
+    return `M ${s.x} ${s.y} A ${radius} ${radius} 0 ${large} 1 ${e.x} ${e.y}`
+  }
+
+  // Pointer on knob = drag up to increase
+  function onPointerDown(e: React.PointerEvent) {
+    e.currentTarget.setPointerCapture(e.pointerId)
+    dragStart.current = { y: e.clientY, val: value }
+  }
+  function onPointerMove(e: React.PointerEvent) {
+    if (!dragStart.current) return
+    const dy = dragStart.current.y - e.clientY // up = positive
+    const range = param.max - param.min
+    const sensitivity = 200 // px for full range
+    const delta = (dy / sensitivity) * range
+    const clamped = Math.min(param.max, Math.max(param.min, dragStart.current.val + delta))
+    const stepped = param.step ? Math.round(clamped / param.step) * param.step : clamped
+    onChange(parseFloat(stepped.toFixed(6)))
+  }
+  function onPointerUp() { dragStart.current = null }
+
+  const fillEnd = START_DEG + arcDeg
+  const indicatorPos = polarToXY(fillEnd, trackR - 2)
+  const displayVal = Math.abs(value) >= 100 ? Math.round(value) : value.toFixed(param.step && param.step >= 1 ? 0 : 2)
+
+  return (
+    <div className="flex flex-col items-center gap-1 select-none" style={{ width: size + 16 }}>
+      <svg
+        width={size} height={size}
+        className="cursor-ns-resize touch-none"
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+      >
+        {/* Outer ring */}
+        <circle cx={cx} cy={cy} r={r - 2} fill="#1a1a1a" stroke="#444" strokeWidth={1.5} />
+        {/* Track arc (grey) */}
+        <path d={describeArc(START_DEG, END_DEG, trackR)} fill="none" stroke="#333" strokeWidth={5} strokeLinecap="round" />
+        {/* Fill arc (colored) */}
+        {arcDeg > 1 && (
+          <path d={describeArc(START_DEG, fillEnd, trackR)} fill="none" stroke={color} strokeWidth={5} strokeLinecap="round" />
+        )}
+        {/* Indicator dot */}
+        <circle cx={indicatorPos.x} cy={indicatorPos.y} r={2.5} fill={color} />
+        {/* Centre dot */}
+        <circle cx={cx} cy={cy} r={3} fill="#555" />
+      </svg>
+      <span className="text-[9px] text-gray-400 font-medium tracking-wide uppercase truncate" style={{ maxWidth: size + 16 }}>{param.label}</span>
+      <span className="text-[10px] font-mono" style={{ color }}>{displayVal}</span>
+    </div>
+  )
+}
+
+// ─── 303-style expanded panel (bottom sheet) ─────────────────────────────────
+function FX303Window({ device, trackId, onClose }: { device: FXDevice; trackId: string; onClose: () => void }) {
   const { updateFXParam, tracks } = useProjectStore()
-  const { updateFXParam: updateAudioFXParam } = useAudioEngine()
+  const { updateFXParam: updateAudio } = useAudioEngine()
   const color = DEVICE_COLORS[device.name] ?? '#555'
   const params = getParams(device.name)
   const isSidechain = device.name === 'Sidechain'
@@ -188,60 +268,73 @@ function FXExpandWindow({ device, trackId, onClose }: { device: FXDevice; trackI
 
   return (
     <div
-      className="fixed z-50 bg-[#1e1e1e] border border-[#3a3a3a] rounded-lg shadow-2xl animate-fade-in"
-      style={{ bottom: RACK_HEIGHT + 8, left: '50%', transform: 'translateX(-50%)', minWidth: 320, maxWidth: 480 }}
+      className="fixed inset-x-0 bottom-0 z-50 animate-sheet-up"
+      style={{ background: '#111', borderTop: `2px solid ${color}` }}
     >
+      {/* 303 header strip */}
       <div
-        className="flex items-center gap-2 px-4 py-2.5 rounded-t-lg"
-        style={{ background: color + '22', borderBottom: `1px solid ${color}55` }}
+        className="flex items-center gap-3 px-4 py-2"
+        style={{ background: `linear-gradient(90deg, ${color}22 0%, #111 100%)` }}
       >
-        <div className="w-2 h-2 rounded-full" style={{ background: color }} />
-        <span className="text-sm font-bold flex-1" style={{ color }}>{device.name}</span>
-        <button onClick={onClose}
-          className="text-gray-500 hover:text-white text-xs px-1.5 py-1 rounded border border-[#3a3a3a] hover:border-[#555] touch-manipulation"
-        >&#10561; close</button>
+        {/* Glowing brand name */}
+        <span
+          className="text-xs font-black tracking-[0.25em] uppercase"
+          style={{ color, textShadow: `0 0 8px ${color}` }}
+        >{device.name}</span>
+        <div className="flex-1 h-px" style={{ background: `linear-gradient(90deg, ${color}66, transparent)` }} />
+        {/* LED indicator */}
+        <div className="w-2.5 h-2.5 rounded-full animate-pulse" style={{ background: color, boxShadow: `0 0 6px ${color}` }} />
+        <button
+          onClick={onClose}
+          className="ml-2 text-xs px-3 py-1.5 rounded border touch-manipulation"
+          style={{ borderColor: color + '66', color: color }}
+        >✕ close</button>
       </div>
 
-      <div className="px-4 py-3 space-y-3">
+      {/* Knob row */}
+      <div
+        className="flex items-end justify-around gap-2 px-4 pb-4 pt-3 overflow-x-auto"
+        style={{ background: '#181818' }}
+      >
         {isSidechain && (
-          <div>
-            <label className="text-xs text-gray-400 font-medium block mb-1">Sidechain Source</label>
+          <div className="flex flex-col items-center gap-1 shrink-0">
+            <span className="text-[9px] text-gray-400 uppercase tracking-wide mb-1">Source</span>
             <select
-              className="w-full bg-[#1a1a1a] border border-[#06b6d4]/40 rounded px-2 py-1.5 text-xs text-white focus:border-[#06b6d4] outline-none"
+              className="bg-[#1a1a1a] border rounded px-2 py-1 text-[10px] text-white outline-none"
+              style={{ borderColor: color + '55' }}
               value={device.params.sourceTrackId ?? ''}
               onChange={(e) => updateFXParam(trackId, device.id, 'sourceTrackId', e.target.value)}
             >
               <option value="">— none —</option>
               {sources.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
-            <p className="text-[10px] text-gray-600 mt-1">Signal from source track ducks the gain of this track</p>
           </div>
         )}
-        {params.map(p => {
-          const value = getVal(p.key, p.def)
-          const pct = ((value - p.min) / (p.max - p.min)) * 100
-          return (
-            <div key={p.key}>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs text-gray-400 font-medium">{p.label}</span>
-                <span className="text-xs font-mono" style={{ color }}>
-                  {Math.abs(value) >= 100 ? Math.round(value) : value.toFixed(p.step && p.step >= 1 ? 0 : 2)}
-                </span>
-              </div>
-              <input type="range" min={p.min} max={p.max} step={p.step ?? 0.01} value={value}
-                onChange={(e) => updateAudioFXParam(trackId, device.id, p.key, parseFloat(e.target.value))}
-                className="w-full h-4 appearance-none cursor-pointer touch-manipulation"
-                style={{ background: `linear-gradient(to right, ${color}cc ${pct}%, #2a2a2a ${pct}%)`, borderRadius: 6 }}
-              />
-            </div>
-          )
-        })}
+        {params.map(p => (
+          <Knob
+            key={p.key}
+            param={p}
+            value={getVal(p.key, p.def)}
+            color={color}
+            size={72}
+            onChange={(v) => updateAudio(trackId, device.id, p.key, v)}
+          />
+        ))}
+      </div>
+
+      {/* Bottom screws — purely decorative 303 vibe */}
+      <div className="flex justify-between px-4 pb-2">
+        {[0,1,2,3].map(i => (
+          <div key={i} className="w-3 h-3 rounded-full bg-[#2a2a2a] border border-[#444] flex items-center justify-center">
+            <div className="w-1 h-0.5 bg-[#555] rounded" />
+          </div>
+        ))}
       </div>
     </div>
   )
 }
 
-export default function DeviceRack() {
+export default function DeviceRack({ rackOpen, onToggleRack }: { rackOpen: boolean; onToggleRack: () => void }) {
   const { tracks, selectedTrackId, addFX, reorderFX } = useProjectStore()
   const track = tracks.find(t => t.id === selectedTrackId)
   const [expandedDevice, setExpandedDevice] = useState<FXDevice | null>(null)
@@ -255,15 +348,41 @@ export default function DeviceRack() {
     'Saturator', 'Env Follower', 'OTT', 'Sidechain', 'ADSR',
   ]
 
+  // Collapsed bar — shows instead of nothing when rack is closed
+  if (!rackOpen) {
+    return (
+      <div
+        className="shrink-0 bg-[#1e1e1e] border-t border-[#3a3a3a] flex items-center gap-2 px-3 cursor-pointer hover:bg-[#252525] transition-colors"
+        style={{ height: 28 }}
+        onClick={onToggleRack}
+      >
+        <span className="text-[9px] font-bold uppercase tracking-widest text-gray-600">▲ Device Rack</span>
+        {track && (
+          <>
+            <div className="w-1.5 h-1.5 rounded-full" style={{ background: track.color }} />
+            <span className="text-[9px] text-gray-600 truncate max-w-[120px]">{track.name}</span>
+            {track.fx.length > 0 && (
+              <span className="text-[9px] text-gray-700">· {track.fx.length} device{track.fx.length > 1 ? 's' : ''}</span>
+            )}
+          </>
+        )}
+      </div>
+    )
+  }
+
   return (
     <>
       {liveExpandedDevice && track && (
-        <FXExpandWindow device={liveExpandedDevice} trackId={track.id} onClose={() => setExpandedDevice(null)} />
+        <FX303Window device={liveExpandedDevice} trackId={track.id} onClose={() => setExpandedDevice(null)} />
       )}
 
       <div className="shrink-0 bg-[#1e1e1e] border-t border-[#3a3a3a] flex flex-col" style={{ height: RACK_HEIGHT }}>
         <div className="flex items-center gap-3 px-3 h-7 border-b border-[#3a3a3a] shrink-0">
-          <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Device Rack</span>
+          <button
+            className="text-[10px] font-bold uppercase tracking-widest text-gray-500 hover:text-gray-300 transition-colors"
+            onClick={onToggleRack}
+            title="Collapse device rack"
+          >▼ Device Rack</button>
           {track && (
             <>
               <div className="w-1.5 h-1.5 rounded-full" style={{ background: track.color }} />

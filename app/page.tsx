@@ -19,15 +19,15 @@ export default function Home() {
   const { reorderTracks, tracks, moveClip, setGroupId } = useProjectStore()
   const [activeId, setActiveId] = useState<string | null>(null)
   const [activeKind, setActiveKind] = useState<string | null>(null)
-  // Inspector open by default on desktop (lg+), closed on mobile
   const [inspectorOpen, setInspectorOpen] = useState(false)
   const [rackOpen, setRackOpen] = useState(true)
 
   useKeyboard()
 
-  // Open inspector by default on desktop
   useEffect(() => {
     if (window.innerWidth >= 1024) setInspectorOpen(true)
+    // collapse rack by default on small screens
+    if (window.innerWidth < 768) setRackOpen(false)
   }, [])
 
   const sensors = useSensors(
@@ -86,7 +86,7 @@ export default function Home() {
           <BrowserPanel />
           <div className="flex flex-col flex-1 overflow-hidden min-h-0">
             <Timeline />
-            {rackOpen && <DeviceRack />}
+            <DeviceRack rackOpen={rackOpen} onToggleRack={() => setRackOpen(v => !v)} />
           </div>
           {inspectorOpen && <Inspector onClose={() => setInspectorOpen(false)} />}
         </div>
