@@ -15,24 +15,21 @@ function percentToDb(pct: number) {
 }
 
 // ─── Pan Knob ────────────────────────────────────────────────────────────────
-// Drag vertically to pan; double-click to reset center.
 function PanKnob({ value, color, onChange }: {
-  value: number   // -1 (L) → 0 (C) → 1 (R)
+  value: number
   color: string
   onChange: (v: number) => void
 }) {
   const dragRef = useRef<{ startY: number; startVal: number } | null>(null)
   const SIZE = 28
-  const DRAG_RANGE = 60   // px to sweep full range
+  const DRAG_RANGE = 60
 
-  // Arc from -135° to +135° (270° total)
-  const angle = -135 + (value + 1) / 2 * 270   // degrees
+  const angle = -135 + (value + 1) / 2 * 270
   const rad   = (angle * Math.PI) / 180
   const cx = SIZE / 2
   const cy = SIZE / 2
   const r  = 10
 
-  // Filled arc from center (0°) to current angle
   function arcPath(startDeg: number, endDeg: number, radius: number) {
     const s = ((startDeg - 90) * Math.PI) / 180
     const e = ((endDeg   - 90) * Math.PI) / 180
@@ -45,22 +42,15 @@ function PanKnob({ value, color, onChange }: {
     return `M ${x1} ${y1} A ${radius} ${radius} 0 ${large} ${sweep} ${x2} ${y2}`
   }
 
-  // Track arc (full -135° → +135°)
   const trackPath = arcPath(-135, 135, r)
-
-  // Fill arc from 0° (center) to current angle
-  const fillFrom  = 0   // center = pan 0
+  const fillFrom  = 0
   const fillTo    = angle
-  const fillPath  = fillFrom !== fillTo ? arcPath(
-    Math.min(fillFrom, fillTo),
-    Math.max(fillFrom, fillTo),
-    r,
-  ) : ''
+  const fillPath  = fillFrom !== fillTo
+    ? arcPath(Math.min(fillFrom, fillTo), Math.max(fillFrom, fillTo), r)
+    : ''
 
-  // Indicator dot
   const dotX = cx + r * Math.cos(rad)
   const dotY = cy + r * Math.sin(rad)
-
   const label = value === 0 ? 'C' : value < 0 ? `L${Math.round(-value * 100)}` : `R${Math.round(value * 100)}`
 
   function onPointerDown(e: React.PointerEvent) {
@@ -70,8 +60,7 @@ function PanKnob({ value, color, onChange }: {
   function onPointerMove(e: React.PointerEvent) {
     if (!dragRef.current) return
     const dy = dragRef.current.startY - e.clientY
-    const delta = (dy / DRAG_RANGE) * 2
-    const next = Math.max(-1, Math.min(1, dragRef.current.startVal + delta))
+    const next = Math.max(-1, Math.min(1, dragRef.current.startVal + (dy / DRAG_RANGE) * 2))
     onChange(parseFloat(next.toFixed(2)))
   }
   function onPointerUp() { dragRef.current = null }
@@ -86,21 +75,12 @@ function PanKnob({ value, color, onChange }: {
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
         onDoubleClick={() => onChange(0)}
-        title="Drag to pan. Double-click to center"
       >
-        {/* Track arc */}
+        <title>Drag to pan. Double-click to center</title>
         <path d={trackPath} fill="none" stroke="#2a2a2a" strokeWidth={2.5} strokeLinecap="round" />
-        {/* Fill arc */}
         {fillPath && <path d={fillPath} fill="none" stroke={color + '99'} strokeWidth={2.5} strokeLinecap="round" />}
-        {/* Center tick */}
-        <line
-          x1={cx} y1={cy - r + 3}
-          x2={cx} y2={cy - r - 1}
-          stroke="#444" strokeWidth={1}
-        />
-        {/* Knob body */}
+        <line x1={cx} y1={cy - r + 3} x2={cx} y2={cy - r - 1} stroke="#444" strokeWidth={1} />
         <circle cx={cx} cy={cy} r={6} fill="#1e1e1e" stroke="#3a3a3a" strokeWidth={1} />
-        {/* Indicator dot */}
         <circle cx={dotX} cy={dotY} r={1.8} fill={color} />
       </svg>
       <span className="text-[7px] font-mono" style={{ color: color + 'bb' }}>{label}</span>
@@ -138,10 +118,8 @@ function VerticalFader({ trackId, color, name, db, pan, onVolumeChange, onPanCha
 
   return (
     <div className="flex flex-col items-center gap-1 select-none" style={{ minWidth: 44 }}>
-      {/* Track name */}
       <span className="text-[8px] text-gray-500 truncate w-full text-center" style={{ maxWidth: 44 }}>{name}</span>
 
-      {/* Fader track */}
       <div
         className="relative rounded-sm cursor-ns-resize touch-none"
         style={{ width: 12, height: FADER_H, background: '#111', border: '1px solid #2a2a2a' }}
@@ -152,17 +130,14 @@ function VerticalFader({ trackId, color, name, db, pan, onVolumeChange, onPanCha
         onDoubleClick={() => onVolumeChange(0)}
         title="Drag to set volume. Double-click to reset to 0 dB"
       >
-        {/* Unity (0 dB) tick mark */}
         <div
           className="absolute left-0 right-0 h-px bg-[#e8a020]/50"
           style={{ top: `${100 - dbToPercent(0)}%` }}
         />
-        {/* Fill */}
         <div
           className="absolute bottom-0 left-0 right-0 rounded-sm transition-none"
           style={{ height: `${pct}%`, background: color + '88' }}
         />
-        {/* Thumb */}
         <div
           className="absolute left-1/2 -translate-x-1/2 rounded-sm shadow"
           style={{
@@ -174,13 +149,10 @@ function VerticalFader({ trackId, color, name, db, pan, onVolumeChange, onPanCha
         />
       </div>
 
-      {/* dB value */}
       <span className="text-[8px] font-mono" style={{ color }}>{displayDb}</span>
 
-      {/* Pan knob */}
       <PanKnob value={pan} color={color} onChange={onPanChange} />
 
-      {/* Color dot */}
       <div className="w-2 h-2 rounded-full" style={{ background: color }} />
     </div>
   )
