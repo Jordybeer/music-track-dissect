@@ -14,6 +14,9 @@ const MIDI_SAMPLE_NOTE = 'C3'
 const DRUM_SAMPLE_NOTE = 'C1'
 const AUDIO_SAMPLE_NOTE = 'C3'
 
+// 16 steps at 1/16n per step = 1 bar
+const STEPS_PER_BAR = 16
+
 export type TransportState = 'stopped' | 'started' | 'paused'
 
 export interface AudioEngine {
@@ -26,6 +29,7 @@ export interface AudioEngine {
   setMasterVolume: (db: number) => void
   updateFXParam: (trackId: string, deviceId: string, param: string, value: number) => void
   setTrackVolume: (trackId: string, db: number) => void
+  setTrackPan: (trackId: string, value: number) => void
 }
 
 export const sampleBufferMap = new Map<string, ArrayBuffer>()
@@ -111,6 +115,58 @@ export const instrumentOutputMap = new Map<string, any>()
 // TB-303 engine map: { synth, filter, dist }
 const tb303Map = new Map<string, { synth: any; filter: any; dist: any }>()
 
+// Panner map: one Tone.Panner per track
+const pannerMap = new Map<string, any>()
+
+// Build Tone.Part events for all clips on a step-based track.
+// Each step is placed at its absolute bar position so clips only play within their bounds.
+function buildStepPartEvents(
+  clips: import('@/store/projectStore').Clip[],
+  isKit: false,
+  slotMap: null,
+  isDrum: boolean,
+  hasSample: boolean,
+  isRimshot: boolean,
+): Array<{ time: string; step: import('@/store/projectStore').StepNote; stepIndex: number; clipStart: number; clipLen: number }>
+function buildStepPartEvents(
+  clips: import('@/store/projectStore').Clip[],
+  isKit: true,
+  slotMap: Map<DrumSlot, any>,
+  isDrum: boolean,
+  hasSample: boolean,
+  isRimshot: boolean,
+): Array<{ time: string; step: import('@/store/projectStore').StepNote; stepIndex: number; clipStart: number; clipLen: number }>
+function buildStepPartEvents(
+  clips: import('@/store/projectStore').Clip[],
+  isKit: boolean,
+  slotMap: Map<DrumSlot, any> | null,
+  isDrum: boolean,
+  hasSample: boolean,
+  isRimshot: boolean,
+) {
+  const events: any[] = []
+  for (const clip of clips) {
+    if (!clip.steps?.length) continue
+    const clipStart = Math.max(0, clip.startBar - 1)  // 0-indexed bars
+    const clipLen   = Math.max(1, clip.lengthBars)
+    // Each 16n step = 1/16 of a bar. Spread steps across clip length proportionally.
+    const stepsTotal = clip.steps.length  // typically 16
+    for (let i = 0; i < stepsTotal; i++) {
+      const step = clip.steps[i]
+      if (!step?.active) continue
+      // bar offset within the clip for this step (0..clipLen)
+      const barOffset = (i / STEPS_PER_BAR)  // each 16 steps = 1 bar
+      if (barOffset >= clipLen) continue      // don't place events beyond clip length
+      const absBar   = clipStart + barOffset
+      const bars     = Math.floor(absBar)
+      const sixteenth = Math.round((absBar - bars) * 16)
+      const time = `${bars}:${Math.floor(sixteenth / 4)}:${sixteenth % 4}`
+      events.push({ time, step, stepIndex: i, clipStart, clipLen })
+    }
+  }
+  return events
+}
+
 export function useAudioEngine(): AudioEngine {
   const toneRef    = useRef<ToneModule | null>(null)
   const masterRef  = useRef<InstanceType<ToneModule['Volume']> | null>(null)
@@ -118,8 +174,10 @@ export function useAudioEngine(): AudioEngine {
   const fxMap          = useRef<Map<string, any[]>>(new Map())
   const fxIdMap        = useRef<Map<string, string[]>>(new Map())
   const seqMap         = useRef<Map<string, any>>(new Map())
-  const partMap        = useRef<Map<string, any>>(new Map())
+  const partMap        = useRef<Map<string, any[]>>(new Map())   // now stores array of Parts (one per clip)
   const sidechainGainMap = useRef<Map<string, any>>(new Map())
+  // Track previous JSON fingerprints for debounced resync
+  const prevTrackJson  = useRef<Map<string, string>>(new Map())
 
   const [transportState, setTransportState] = useState<TransportState>('stopped')
   const [position,       setPosition]       = useState('1:0:0')
@@ -166,7 +224,7 @@ export function useAudioEngine(): AudioEngine {
 
   function makeFXNode(Tone: ToneModule, name: string, params: Record<string, string>): any | null {
     const n = name.toLowerCase()
-    if (n === 'adsr' || n === 'sidechain') return null
+    if (n === 'adsr' || n === 'sidechain' || n === 'utility') return null
     const wet = params.wet !== undefined ? parseFloat(params.wet) : undefined
     let node: any = null
     if      (n.includes('reverb'))                          node = new Tone.Reverb({ decay: params.decay !== undefined ? parseFloat(params.decay) : 2.5, wet: wet ?? 0.3 })
@@ -228,7 +286,6 @@ export function useAudioEngine(): AudioEngine {
 
   // ─── TB-303 engine ────────────────────────────────────────────────────────
   async function sync303Track(Tone: ToneModule, track: Track, scGain: any) {
-    // Dispose old 303
     const old = tb303Map.get(track.id)
     if (old) {
       try { old.synth.dispose()  } catch {}
@@ -241,22 +298,19 @@ export function useAudioEngine(): AudioEngine {
     const resonance = track.tb303Resonance ?? 0.6
     const wave      = track.tb303Wave      ?? 'sawtooth'
 
-    // Monophonic synth for 303 (monophony = authentic)
     const synth = new Tone.Synth({
       oscillator: { type: wave as any },
       envelope: { attack: 0.005, decay: track.tb303Decay ?? 0.3, sustain: 0, release: 0.05 },
-      portamento: 0,  // set per-step
+      portamento: 0,
     })
 
-    // Resonant low-pass filter — the heart of the 303 sound
     const filter = new Tone.Filter({
       type: 'lowpass',
       frequency: cutoff,
       rolloff: -24,
-      Q: resonance * 20,  // Q up to 20 gives that screaming resonance
+      Q: resonance * 20,
     })
 
-    // Slight waveshaper distortion for that warm, slightly crunchy tone
     const dist = new Tone.Distortion(0.12)
 
     synth.connect(filter)
@@ -266,43 +320,53 @@ export function useAudioEngine(): AudioEngine {
     tb303Map.set(track.id, { synth, filter, dist })
     instrumentOutputMap.set(track.id, synth)
 
-    const clip = track.clips.find(c => c.steps && c.steps.length === 16)
-    if (!clip) return
-
-    const steps = clip.steps
-    const envMod   = track.tb303EnvMod   ?? 0.5
-    const accentAmt = track.tb303Accent  ?? 0.7
+    const envMod    = track.tb303EnvMod   ?? 0.5
+    const accentAmt = track.tb303Accent   ?? 0.7
     const baseCutoff = cutoff
+    const clipParts: any[] = []
 
-    const seq = new Tone.Sequence((time: number, stepIndex: number) => {
-      const i = Number(stepIndex) % 16
-      const step = steps[i]
-      if (!step?.active) return
+    for (const clip of track.clips) {
+      if (!clip.steps?.length) continue
+      const clipStart = Math.max(0, clip.startBar - 1)
+      const clipLen   = Math.max(1, clip.lengthBars)
+      const events: any[] = []
+      for (let i = 0; i < clip.steps.length; i++) {
+        const step = clip.steps[i]
+        if (!step?.active) continue
+        const barOffset = i / STEPS_PER_BAR
+        if (barOffset >= clipLen) continue
+        const absBar    = clipStart + barOffset
+        const bars      = Math.floor(absBar)
+        const sixteenth = Math.round((absBar - bars) * 16)
+        const time = `${bars}:${Math.floor(sixteenth / 4)}:${sixteenth % 4}`
+        events.push({ time, step, i })
+      }
+      if (!events.length) continue
 
-      const note = step.note || 'C3'
-      const velocity = (step.velocity ?? 100) / 127
-      const isAccent = step.accent ?? false
-      const isSlide  = step.slide  ?? false
+      const part = new Tone.Part((time: number, ev: { step: any; i: number }) => {
+        const { step } = ev
+        const note       = step.note || 'C3'
+        const velocity   = (step.velocity ?? 100) / 127
+        const isAccent   = step.accent ?? false
+        const isSlide    = step.slide  ?? false
+        try { synth.portamento = isSlide ? 0.08 : 0 } catch {}
+        const velFinal   = isAccent ? Math.min(1, velocity + accentAmt * 0.4) : velocity
+        const envCutoff  = baseCutoff + envMod * 4000 * (isAccent ? 1.4 : 1)
+        try {
+          filter.frequency.cancelScheduledValues(time)
+          filter.frequency.setValueAtTime(envCutoff, time)
+          filter.frequency.exponentialRampToValueAtTime(baseCutoff, time + (track.tb303Decay ?? 0.3))
+        } catch {}
+        try { synth.triggerAttackRelease(note, step.duration ?? '16n', time, velFinal) } catch {}
+      }, events)
 
-      // Slide: set portamento to glide into this note
-      try { synth.portamento = isSlide ? 0.08 : 0 } catch {}
+      part.loop    = true
+      part.loopStart = `${clipStart}m`
+      part.loopEnd   = `${clipStart + clipLen}m`
+      clipParts.push(part)
+    }
 
-      // Accent: boost volume and spike the filter cutoff
-      const velFinal = isAccent ? Math.min(1, velocity + accentAmt * 0.4) : velocity
-
-      // Filter envelope: cutoff sweeps up by envMod amount, then decays with note
-      const envCutoff = baseCutoff + envMod * 4000 * (isAccent ? 1.4 : 1)
-      try {
-        filter.frequency.cancelScheduledValues(time)
-        filter.frequency.setValueAtTime(envCutoff, time)
-        filter.frequency.exponentialRampToValueAtTime(baseCutoff, time + (track.tb303Decay ?? 0.3))
-      } catch {}
-
-      try { synth.triggerAttackRelease(note, step.duration ?? '16n', time, velFinal) } catch {}
-    }, Array.from({ length: 16 }, (_, i) => i), '16n')
-
-    seq.loop = true
-    seqMap.current.set(track.id, seq)
+    partMap.current.set(track.id, clipParts)
   }
 
   const syncTrack = useCallback(async (track: Track) => {
@@ -318,10 +382,12 @@ export function useAudioEngine(): AudioEngine {
     ;(fxMap.current.get(track.id) ?? []).forEach(n => { try { n.dispose() } catch {} })
     const oldSeq = seqMap.current.get(track.id)
     if (oldSeq) { try { oldSeq.dispose() } catch {} }
-    const oldPart = partMap.current.get(track.id)
-    if (oldPart) { try { oldPart.dispose() } catch {} }
+    const oldParts = partMap.current.get(track.id) ?? []
+    oldParts.forEach(p => { try { p.dispose() } catch {} })
     const oldGain = sidechainGainMap.current.get(track.id)
     if (oldGain) { try { oldGain.dispose() } catch {} }
+    const oldPanner = pannerMap.get(track.id)
+    if (oldPanner) { try { oldPanner.dispose() } catch {}; pannerMap.delete(track.id) }
 
     instrumentMap.current.delete(track.id)
     fxMap.current.delete(track.id)
@@ -332,8 +398,13 @@ export function useAudioEngine(): AudioEngine {
 
     if (track.type === 'group') return
 
+    // Build chain: instrument → fx → panner → scGain → master
+    const panner = new Tone.Panner(track.pan ?? 0)
+    panner.connect(masterRef.current)
+    pannerMap.set(track.id, panner)
+
     const scGain = new Tone.Volume(track.volume ?? 0)
-    scGain.connect(masterRef.current)
+    scGain.connect(panner)
     if (track.muted) scGain.volume.value = -Infinity
     sidechainGainMap.current.set(track.id, scGain)
 
@@ -351,6 +422,7 @@ export function useAudioEngine(): AudioEngine {
     const fxIds:   string[] = []
     let adsrParams: Record<string, string> | null = null
     let sidechainDevice: typeof track.fx[0] | null = null
+    let utilityDevice: typeof track.fx[0] | null = null
 
     for (const device of track.fx) {
       if (device.name.toLowerCase() === 'adsr') {
@@ -363,11 +435,25 @@ export function useAudioEngine(): AudioEngine {
         fxParamMap.set(device.id, { _isSidechain: true, trackId: track.id, deviceId: device.id })
         continue
       }
+      if (device.name.toLowerCase() === 'utility') {
+        utilityDevice = device
+        fxParamMap.set(device.id, { _isUtility: true, trackId: track.id })
+        continue
+      }
       const node = makeFXNode(Tone, device.name, device.params)
       if (node) { fxNodes.push(node); fxIds.push(device.id); fxParamMap.set(device.id, node) }
     }
     fxMap.current.set(track.id, fxNodes)
     fxIdMap.current.set(track.id, fxIds)
+
+    // Apply Utility device params (gain/width/mono) directly to panner/scGain
+    if (utilityDevice) {
+      const p = utilityDevice.params
+      if (p.gain     !== undefined) { try { scGain.volume.value += parseFloat(p.gain) } catch {} }
+      if (p.width    !== undefined) { try { panner.width ? (panner as any).width.value = parseFloat(p.width) : null } catch {} }
+      // mono: collapse to center
+      if (p.mono === 'true') { try { panner.pan.value = 0 } catch {} }
+    }
 
     if (isKitTrack) {
       const slotMap = new Map<DrumSlot, any>()
@@ -384,35 +470,51 @@ export function useAudioEngine(): AudioEngine {
       kitInstrMap.set(track.id, slotMap)
       instrumentOutputMap.set(track.id, slotMap.get('kick'))
 
-      const clip = track.clips.find(c => c.steps && c.steps.length === 16)
-      if (!clip) {
-        if (sidechainDevice?.params.sourceTrackId) {
-          const audioCtx = Tone.getContext().rawContext as AudioContext
-          startSidechain(sidechainDevice.id, sidechainDevice.params.sourceTrackId, scGain, audioCtx, sidechainDevice.params)
+      // Build Part events for all kit clips
+      const clipParts: any[] = []
+      for (const clip of track.clips) {
+        if (!clip.steps?.length) continue
+        const clipStart = Math.max(0, clip.startBar - 1)
+        const clipLen   = Math.max(1, clip.lengthBars)
+        const events: any[] = []
+        for (let i = 0; i < clip.steps.length; i++) {
+          const step = clip.steps[i]
+          if (!step?.active) continue
+          const barOffset = i / STEPS_PER_BAR
+          if (barOffset >= clipLen) continue
+          const absBar    = clipStart + barOffset
+          const b         = Math.floor(absBar)
+          const sixteenth = Math.round((absBar - b) * 16)
+          const time = `${b}:${Math.floor(sixteenth / 4)}:${sixteenth % 4}`
+          events.push({ time, step, i })
         }
-        return
+        if (!events.length) continue
+
+        const part = new Tone.Part((time: number, ev: { step: any }) => {
+          const { step } = ev
+          if (!step?.active) return
+          const velocity = Math.max(0.05, (step.velocity ?? 100) / 127)
+          const slot: DrumSlot = step.drumSlot ?? 'kick'
+          const voice = slotMap.get(slot)
+          if (!voice) return
+          try {
+            const vtype = voice.constructor?.name ?? ''
+            if (vtype === 'NoiseSynth' || vtype === 'MetalSynth') {
+              voice.triggerAttackRelease('16n', time, velocity)
+            } else {
+              const note = slot === 'kick' ? 'C1' : slot === 'tom' ? 'G1' : 'C2'
+              voice.triggerAttackRelease(note, '16n', time, velocity)
+            }
+          } catch {}
+        }, events)
+
+        part.loop      = true
+        part.loopStart = `${clipStart}m`
+        part.loopEnd   = `${clipStart + clipLen}m`
+        clipParts.push(part)
       }
-      const steps = clip.steps
-      const seq = new Tone.Sequence((time: number, stepIndex: number) => {
-        const i = Number(stepIndex) % 16
-        const step = steps[i]
-        if (!step?.active) return
-        const velocity = Math.max(0.05, (step.velocity ?? 100) / 127)
-        const slot: DrumSlot = step.drumSlot ?? 'kick'
-        const voice = slotMap.get(slot)
-        if (!voice) return
-        try {
-          const vtype = voice.constructor?.name ?? ''
-          if (vtype === 'NoiseSynth' || vtype === 'MetalSynth') {
-            voice.triggerAttackRelease('16n', time, velocity)
-          } else {
-            const note = slot === 'kick' ? 'C1' : slot === 'tom' ? 'G1' : 'C2'
-            voice.triggerAttackRelease(note, '16n', time, velocity)
-          }
-        } catch {}
-      }, Array.from({ length: 16 }, (_, i) => i), '16n')
-      seq.loop = true
-      seqMap.current.set(track.id, seq)
+      partMap.current.set(track.id, clipParts)
+
       if (sidechainDevice?.params.sourceTrackId) {
         const audioCtx = Tone.getContext().rawContext as AudioContext
         startSidechain(sidechainDevice.id, sidechainDevice.params.sourceTrackId, scGain, audioCtx, sidechainDevice.params)
@@ -436,43 +538,85 @@ export function useAudioEngine(): AudioEngine {
       startSidechain(sidechainDevice.id, sidechainDevice.params.sourceTrackId, scGain, audioCtx, sidechainDevice.params)
     }
 
+    const isDrum    = track.type === 'drum'
+    const hasSampleF = sampleBufferMap.has(track.id)
+    const isRimshot  = isDrum && (track.drumVoice ?? 'membrane') === 'rimshot'
+
     if (track.type === 'audio') {
+      // Audio clips: use Part with absolute positions
       const events = track.clips.map(clip => ({
         time: `${Math.max(0, clip.startBar - 1)}:0:0`,
         duration: `${Math.max(1, clip.lengthBars)}m`,
+        clipStart: Math.max(0, clip.startBar - 1),
+        clipLen: Math.max(1, clip.lengthBars),
       }))
+      const clipParts: any[] = []
       if (events.length > 0) {
         const part = new Tone.Part((time: number, ev: { duration: string }) => {
           try { instr.triggerAttackRelease(AUDIO_SAMPLE_NOTE, ev.duration, time) } catch {}
         }, events)
-        part.loop = true
+        part.loop    = true
         part.loopEnd = `${Math.max(1, bars)}m`
-        partMap.current.set(track.id, part)
+        clipParts.push(part)
       }
+      partMap.current.set(track.id, clipParts)
       return
     }
 
-    const clip = track.clips.find(c => c.steps && c.steps.length === 16)
-    if (!clip) return
-    const steps = clip.steps
-    const isDrum = track.type === 'drum'
-    const isRimshot = isDrum && (track.drumVoice ?? 'membrane') === 'rimshot'
+    // MIDI / drum (non-kit) — build one Part per clip
+    const clipParts: any[] = []
+    for (const clip of track.clips) {
+      if (!clip.steps?.length) continue
+      const clipStart = Math.max(0, clip.startBar - 1)
+      const clipLen   = Math.max(1, clip.lengthBars)
+      const events: any[] = []
+      for (let i = 0; i < clip.steps.length; i++) {
+        const step = clip.steps[i]
+        if (!step?.active) continue
+        const barOffset = i / STEPS_PER_BAR
+        if (barOffset >= clipLen) continue
+        const absBar    = clipStart + barOffset
+        const b         = Math.floor(absBar)
+        const sixteenth = Math.round((absBar - b) * 16)
+        const time = `${b}:${Math.floor(sixteenth / 4)}:${sixteenth % 4}`
+        events.push({ time, step, i })
+      }
+      if (!events.length) continue
 
-    const seq = new Tone.Sequence((time: number, stepIndex: number) => {
-      const i = Number(stepIndex) % 16
-      const step = steps[i]
-      if (!step?.active) return
-      const velocity = Math.max(0.05, (step.velocity ?? 100) / 127)
-      const duration = step.duration ?? (hasSample || isDrum ? '32n' : '16n')
-      if (isRimshot) { try { instr.triggerAttackRelease('16n', time, velocity) } catch {}; return }
-      const note = hasSample
-        ? (isDrum ? DRUM_SAMPLE_NOTE : MIDI_SAMPLE_NOTE)
-        : (isDrum ? DRUM_SLOT_NOTES[i] : (step.note || STEP_NOTES[i % STEP_NOTES.length]))
-      try { instr.triggerAttackRelease(note, duration, time, velocity) } catch {}
-    }, Array.from({ length: 16 }, (_, i) => i), '16n')
-    seq.loop = true
-    seqMap.current.set(track.id, seq)
+      const part = new Tone.Part((time: number, ev: { step: any; i: number }) => {
+        const { step, i } = ev
+        if (!step?.active) return
+        const velocity = Math.max(0.05, (step.velocity ?? 100) / 127)
+        const duration = step.duration ?? (hasSampleF || isDrum ? '32n' : '16n')
+        if (isRimshot) { try { instr.triggerAttackRelease('16n', time, velocity) } catch {}; return }
+        const note = hasSampleF
+          ? (isDrum ? DRUM_SAMPLE_NOTE : MIDI_SAMPLE_NOTE)
+          : (isDrum ? DRUM_SLOT_NOTES[i] : (step.note || STEP_NOTES[i % STEP_NOTES.length]))
+        try { instr.triggerAttackRelease(note, duration, time, velocity) } catch {}
+      }, events)
+
+      part.loop      = true
+      part.loopStart = `${clipStart}m`
+      part.loopEnd   = `${clipStart + clipLen}m`
+      clipParts.push(part)
+    }
+    partMap.current.set(track.id, clipParts)
   }, [bars, getTone])
+
+  // Debounced per-track resync: only re-sync tracks whose JSON fingerprint changed
+  useEffect(() => {
+    if (!toneRef.current) return
+    tracks.forEach(track => {
+      const json = JSON.stringify(track)
+      if (prevTrackJson.current.get(track.id) === json) return
+      prevTrackJson.current.set(track.id, json)
+      syncTrack(track)
+    })
+    // Clean up removed tracks
+    prevTrackJson.current.forEach((_, id) => {
+      if (!tracks.find(t => t.id === id)) prevTrackJson.current.delete(id)
+    })
+  }, [tracks, syncTrack])
 
   // Live mute/solo without resync
   useEffect(() => {
@@ -488,13 +632,11 @@ export function useAudioEngine(): AudioEngine {
   }, [tracks])
 
   const updateFXParam = useCallback((trackId: string, deviceId: string, param: string, value: number) => {
-    // TB-303 params routed directly to engine nodes
     const t303 = tb303Map.get(trackId)
     if (t303) {
       if (param === 'cutoff')     { try { t303.filter.frequency.value = value } catch {} }
       if (param === 'resonance')  { try { t303.filter.Q.value = value * 20    } catch {} }
       if (param === 'distortion') { try { t303.dist.distortion = value        } catch {} }
-      // wave/envMod/decay/accent stored in track and applied on next resync
     }
     const node = fxParamMap.get(deviceId)
     if (node?._isADSR) {
@@ -509,6 +651,13 @@ export function useAudioEngine(): AudioEngine {
         if (param === 'attack')  sc.attack  = value
         if (param === 'release') sc.release = value
       }
+    } else if (node?._isUtility) {
+      // Utility: apply to scGain / panner live
+      const scGain = sidechainGainMap.current.get(trackId)
+      const panner = pannerMap.get(trackId)
+      if (param === 'gain'  && scGain) { try { scGain.volume.value = (scGain.volume.value) + value } catch {} }
+      if (param === 'width' && panner) { try { (panner as any).width && ((panner as any).width.value = value) } catch {} }
+      if (param === 'pan'   && panner) { try { panner.pan.value = value } catch {} }
     } else if (node) {
       applyFXParam(node, param, value)
     }
@@ -517,10 +666,14 @@ export function useAudioEngine(): AudioEngine {
 
   const setTrackVolume = useCallback((trackId: string, db: number) => {
     const scGain = sidechainGainMap.current.get(trackId)
-    if (scGain) {
-      try { scGain.volume.value = db } catch {}
-    }
+    if (scGain) { try { scGain.volume.value = db } catch {} }
     useProjectStore.getState().updateTrack(trackId, { volume: db })
+  }, [])
+
+  const setTrackPan = useCallback((trackId: string, value: number) => {
+    const panner = pannerMap.get(trackId)
+    if (panner) { try { panner.pan.value = value } catch {} }
+    useProjectStore.getState().updateTrack(trackId, { pan: value } as any)
   }, [])
 
   useEffect(() => {
@@ -530,11 +683,6 @@ export function useAudioEngine(): AudioEngine {
     transport.loop = true
     transport.loopEnd = `${Math.max(1, bars)}m`
   }, [bpm, bars])
-
-  useEffect(() => {
-    if (!toneRef.current) return
-    tracks.forEach(syncTrack)
-  }, [tracks, syncTrack])
 
   useEffect(() => {
     if (transportState === 'stopped') return
@@ -550,11 +698,13 @@ export function useAudioEngine(): AudioEngine {
       instrumentMap.current.forEach(i => { try { i.dispose() } catch {} })
       fxMap.current.forEach(nodes => nodes.forEach(n => { try { n.dispose() } catch {} }))
       seqMap.current.forEach(s => { try { s.dispose() } catch {} })
-      partMap.current.forEach(p => { try { p.dispose() } catch {} })
+      partMap.current.forEach(parts => parts.forEach(p => { try { p.dispose() } catch {} }))
       kitInstrMap.forEach(kit => kit.forEach(v => { try { v.dispose() } catch {} }))
       kitInstrMap.clear()
       tb303Map.forEach(e => { try { e.synth.dispose() } catch {}; try { e.filter.dispose() } catch {}; try { e.dist.dispose() } catch {} })
       tb303Map.clear()
+      pannerMap.forEach(p => { try { p.dispose() } catch {} })
+      pannerMap.clear()
       sidechainMap.forEach((_, id) => stopSidechain(id))
     }
   }, [])
@@ -572,8 +722,8 @@ export function useAudioEngine(): AudioEngine {
       return
     }
     await Promise.all(tracks.map(syncTrack))
-    seqMap.current.forEach(seq  => { try { seq.stop(0)  } catch {}; try { seq.start(0)  } catch {} })
-    partMap.current.forEach(part => { try { part.stop(0) } catch {}; try { part.start(0) } catch {} })
+    seqMap.current.forEach(seq   => { try { seq.stop(0)  } catch {}; try { seq.start(0)  } catch {} })
+    partMap.current.forEach(parts => parts.forEach(p => { try { p.stop(0) } catch {}; try { p.start(0) } catch {} }))
     transport.position = 0
     transport.start()
     setTransportState('started')
@@ -590,8 +740,8 @@ export function useAudioEngine(): AudioEngine {
     const transport = toneRef.current.getTransport()
     transport.stop()
     transport.position = 0
-    seqMap.current.forEach(seq  => { try { seq.stop(0)  } catch {} })
-    partMap.current.forEach(part => { try { part.stop(0) } catch {} })
+    seqMap.current.forEach(seq   => { try { seq.stop(0)  } catch {} })
+    partMap.current.forEach(parts => parts.forEach(p => { try { p.stop(0) } catch {} }))
     setTransportState('stopped')
     setPosition('1:0:0')
   }, [])
@@ -602,5 +752,5 @@ export function useAudioEngine(): AudioEngine {
     if (masterRef.current) masterRef.current.volume.value = db
   }, [getTone])
 
-  return { transportState, position, masterVolume, play, pause, stop, setMasterVolume, updateFXParam, setTrackVolume }
+  return { transportState, position, masterVolume, play, pause, stop, setMasterVolume, updateFXParam, setTrackVolume, setTrackPan }
 }
