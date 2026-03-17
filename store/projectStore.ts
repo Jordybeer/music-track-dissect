@@ -63,13 +63,14 @@ export interface Track {
   drumKit: DrumKit
   muted: boolean
   soloed: boolean
-  volume: number           // dB, 0 = unity
+  volume: number      // dB, 0 = unity
+  pan: number         // -1 (L) to 1 (R), 0 = center
   // TB-303 params
-  tb303Cutoff: number      // 20–8000 Hz
-  tb303Resonance: number   // 0–1
-  tb303EnvMod: number      // 0–1
-  tb303Decay: number       // 0.01–2 s
-  tb303Accent: number      // 0–1
+  tb303Cutoff: number
+  tb303Resonance: number
+  tb303EnvMod: number
+  tb303Decay: number
+  tb303Accent: number
   tb303Wave: 'sawtooth' | 'square'
 }
 
@@ -165,6 +166,7 @@ function defaultTrack(type: TrackType, name: string, groupId: string | null = nu
     sampleName: '', drumVoice: 'membrane', drumKit: 'none',
     muted: false, soloed: false,
     volume: 0,
+    pan: 0,
     tb303Cutoff: 800, tb303Resonance: 0.6, tb303EnvMod: 0.5,
     tb303Decay: 0.3, tb303Accent: 0.7, tb303Wave: 'sawtooth',
   }
@@ -358,6 +360,7 @@ export const useProjectStore = create<ProjectState>()(
                 muted:      t.muted      ?? false,
                 soloed:     t.soloed     ?? false,
                 volume:     t.volume     ?? 0,
+                pan:        t.pan        ?? 0,
                 tb303Cutoff:    t.tb303Cutoff    ?? 800,
                 tb303Resonance: t.tb303Resonance ?? 0.6,
                 tb303EnvMod:    t.tb303EnvMod    ?? 0.5,
