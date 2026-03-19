@@ -66,21 +66,32 @@ export default function Timeline() {
         <div style={{ minWidth: HEADER_W + bars * barWidth }}>
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <SortableContext items={topTracks.map(t => `track-${t.id}`)} strategy={verticalListSortingStrategy}>
-              {topTracks.map(track =>
-                track.type === 'group' ? (
-                  <GroupRow
-                    key={track.id}
-                    group={track}
-                    children={tracks.filter(t => t.groupId === track.id)}
-                    barWidth={barWidth}
-                    headerW={HEADER_W}
-                  />
-                ) : track.type === 'tb303' ? (
-                  <TB303TrackRow key={track.id} track={track} barWidth={barWidth} headerW={HEADER_W} />
-                ) : (
+              {topTracks.map(track => {
+                if (track.type === 'group') {
+                  return (
+                    <GroupRow
+                      key={track.id}
+                      group={track}
+                      children={tracks.filter(t => t.groupId === track.id)}
+                      barWidth={barWidth}
+                      headerW={HEADER_W}
+                    />
+                  )
+                }
+                if (track.type === 'tb303') {
+                  return (
+                    <TB303TrackRow
+                      key={track.id}
+                      track={track}
+                      barWidth={barWidth}
+                      headerW={HEADER_W}
+                    />
+                  )
+                }
+                return (
                   <TrackRow key={track.id} track={track} barWidth={barWidth} headerW={HEADER_W} />
                 )
-              )}
+              })}
             </SortableContext>
           </DndContext>
         </div>

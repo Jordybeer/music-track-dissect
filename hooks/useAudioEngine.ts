@@ -119,7 +119,6 @@ const tb303Map = new Map<string, { synth: any; filter: any; dist: any }>()
 const pannerMap = new Map<string, any>()
 
 // Build Tone.Part events for all clips on a step-based track.
-// Each step is placed at its absolute bar position so clips only play within their bounds.
 function buildStepPartEvents(
   clips: import('@/store/projectStore').Clip[],
   isKit: false,
@@ -147,16 +146,14 @@ function buildStepPartEvents(
   const events: any[] = []
   for (const clip of clips) {
     if (!clip.steps?.length) continue
-    const clipStart = Math.max(0, clip.startBar - 1)  // 0-indexed bars
+    const clipStart = Math.max(0, clip.startBar - 1)
     const clipLen   = Math.max(1, clip.lengthBars)
-    // Each 16n step = 1/16 of a bar. Spread steps across clip length proportionally.
-    const stepsTotal = clip.steps.length  // typically 16
+    const stepsTotal = clip.steps.length
     for (let i = 0; i < stepsTotal; i++) {
       const step = clip.steps[i]
       if (!step?.active) continue
-      // bar offset within the clip for this step (0..clipLen)
-      const barOffset = (i / STEPS_PER_BAR)  // each 16 steps = 1 bar
-      if (barOffset >= clipLen) continue      // don't place events beyond clip length
+      const barOffset = (i / STEPS_PER_BAR)
+      if (barOffset >= clipLen) continue
       const absBar   = clipStart + barOffset
       const bars     = Math.floor(absBar)
       const sixteenth = Math.round((absBar - bars) * 16)
@@ -174,9 +171,8 @@ export function useAudioEngine(): AudioEngine {
   const fxMap          = useRef<Map<string, any[]>>(new Map())
   const fxIdMap        = useRef<Map<string, string[]>>(new Map())
   const seqMap         = useRef<Map<string, any>>(new Map())
-  const partMap        = useRef<Map<string, any[]>>(new Map())   // stores array of Parts (one per clip)
+  const partMap        = useRef<Map<string, any[]>>(new Map())
   const sidechainGainMap = useRef<Map<string, any>>(new Map())
-  // Track previous JSON fingerprints for debounced resync
   const prevTrackJson  = useRef<Map<string, string>>(new Map())
 
   const [transportState, setTransportState] = useState<TransportState>('stopped')
@@ -360,7 +356,7 @@ export function useAudioEngine(): AudioEngine {
         try { synth.triggerAttackRelease(note, step.duration ?? '16n', time, velFinal) } catch {}
       }, events)
 
-      // FIX: do NOT loop individual clip parts — the transport loop handles repetition
+      // Do NOT loop individual clip parts — the transport loop handles repetition
       part.loop = false
       clipParts.push(part)
     }
@@ -504,7 +500,7 @@ export function useAudioEngine(): AudioEngine {
           } catch {}
         }, events)
 
-        // FIX: do NOT loop individual clip parts — the transport loop handles repetition
+        // Do NOT loop individual clip parts — transport loop handles repetition
         part.loop = false
         clipParts.push(part)
       }
@@ -549,7 +545,7 @@ export function useAudioEngine(): AudioEngine {
         const part = new Tone.Part((time: number, ev: { duration: string }) => {
           try { instr.triggerAttackRelease(AUDIO_SAMPLE_NOTE, ev.duration, time) } catch {}
         }, events)
-        // FIX: do NOT loop — the transport loop handles repetition
+        // Do NOT loop — transport loop handles repetition
         part.loop = false
         clipParts.push(part)
       }
@@ -589,14 +585,13 @@ export function useAudioEngine(): AudioEngine {
         try { instr.triggerAttackRelease(note, duration, time, velocity) } catch {}
       }, events)
 
-      // FIX: do NOT loop individual clip parts — the transport loop handles repetition
+      // Do NOT loop individual clip parts — transport loop handles repetition
       part.loop = false
       clipParts.push(part)
     }
     partMap.current.set(track.id, clipParts)
   }, [bars, getTone])
 
-  // Debounced per-track resync: only re-sync tracks whose JSON fingerprint changed
   useEffect(() => {
     if (!toneRef.current) return
     tracks.forEach(track => {
@@ -605,13 +600,11 @@ export function useAudioEngine(): AudioEngine {
       prevTrackJson.current.set(track.id, json)
       syncTrack(track)
     })
-    // Clean up removed tracks
     prevTrackJson.current.forEach((_, id) => {
       if (!tracks.find(t => t.id === id)) prevTrackJson.current.delete(id)
     })
   }, [tracks, syncTrack])
 
-  // Live mute/solo without resync
   useEffect(() => {
     if (!toneRef.current) return
     const soloedTracks = tracks.filter(t => t.soloed)
