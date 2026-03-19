@@ -9,6 +9,7 @@ import TrackRow from './TrackRow'
 import GroupRow from './GroupRow'
 import SectionRuler from './SectionRuler'
 import WaveformTrack from './WaveformTrack'
+import TB303TrackRow from './TB303TrackRow'
 
 // Parse Tone position string "bars:beats:sixteenths" → bar float
 function positionToBar(pos: string): number {
@@ -74,6 +75,8 @@ export default function Timeline() {
                     barWidth={barWidth}
                     headerW={HEADER_W}
                   />
+                ) : track.type === 'tb303' ? (
+                  <TB303TrackRow key={track.id} track={track} barWidth={barWidth} headerW={HEADER_W} />
                 ) : (
                   <TrackRow key={track.id} track={track} barWidth={barWidth} headerW={HEADER_W} />
                 )

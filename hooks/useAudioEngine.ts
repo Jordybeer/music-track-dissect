@@ -174,7 +174,7 @@ export function useAudioEngine(): AudioEngine {
   const fxMap          = useRef<Map<string, any[]>>(new Map())
   const fxIdMap        = useRef<Map<string, string[]>>(new Map())
   const seqMap         = useRef<Map<string, any>>(new Map())
-  const partMap        = useRef<Map<string, any[]>>(new Map())   // now stores array of Parts (one per clip)
+  const partMap        = useRef<Map<string, any[]>>(new Map())   // stores array of Parts (one per clip)
   const sidechainGainMap = useRef<Map<string, any>>(new Map())
   // Track previous JSON fingerprints for debounced resync
   const prevTrackJson  = useRef<Map<string, string>>(new Map())
@@ -360,9 +360,8 @@ export function useAudioEngine(): AudioEngine {
         try { synth.triggerAttackRelease(note, step.duration ?? '16n', time, velFinal) } catch {}
       }, events)
 
-      part.loop    = true
-      part.loopStart = `${clipStart}m`
-      part.loopEnd   = `${clipStart + clipLen}m`
+      // FIX: do NOT loop individual clip parts — the transport loop handles repetition
+      part.loop = false
       clipParts.push(part)
     }
 
@@ -446,12 +445,10 @@ export function useAudioEngine(): AudioEngine {
     fxMap.current.set(track.id, fxNodes)
     fxIdMap.current.set(track.id, fxIds)
 
-    // Apply Utility device params (gain/width/mono) directly to panner/scGain
     if (utilityDevice) {
       const p = utilityDevice.params
       if (p.gain     !== undefined) { try { scGain.volume.value += parseFloat(p.gain) } catch {} }
       if (p.width    !== undefined) { try { panner.width ? (panner as any).width.value = parseFloat(p.width) : null } catch {} }
-      // mono: collapse to center
       if (p.mono === 'true') { try { panner.pan.value = 0 } catch {} }
     }
 
@@ -470,7 +467,6 @@ export function useAudioEngine(): AudioEngine {
       kitInstrMap.set(track.id, slotMap)
       instrumentOutputMap.set(track.id, slotMap.get('kick'))
 
-      // Build Part events for all kit clips
       const clipParts: any[] = []
       for (const clip of track.clips) {
         if (!clip.steps?.length) continue
@@ -508,9 +504,8 @@ export function useAudioEngine(): AudioEngine {
           } catch {}
         }, events)
 
-        part.loop      = true
-        part.loopStart = `${clipStart}m`
-        part.loopEnd   = `${clipStart + clipLen}m`
+        // FIX: do NOT loop individual clip parts — the transport loop handles repetition
+        part.loop = false
         clipParts.push(part)
       }
       partMap.current.set(track.id, clipParts)
@@ -543,7 +538,6 @@ export function useAudioEngine(): AudioEngine {
     const isRimshot  = isDrum && (track.drumVoice ?? 'membrane') === 'rimshot'
 
     if (track.type === 'audio') {
-      // Audio clips: use Part with absolute positions
       const events = track.clips.map(clip => ({
         time: `${Math.max(0, clip.startBar - 1)}:0:0`,
         duration: `${Math.max(1, clip.lengthBars)}m`,
@@ -555,8 +549,8 @@ export function useAudioEngine(): AudioEngine {
         const part = new Tone.Part((time: number, ev: { duration: string }) => {
           try { instr.triggerAttackRelease(AUDIO_SAMPLE_NOTE, ev.duration, time) } catch {}
         }, events)
-        part.loop    = true
-        part.loopEnd = `${Math.max(1, bars)}m`
+        // FIX: do NOT loop — the transport loop handles repetition
+        part.loop = false
         clipParts.push(part)
       }
       partMap.current.set(track.id, clipParts)
@@ -595,9 +589,8 @@ export function useAudioEngine(): AudioEngine {
         try { instr.triggerAttackRelease(note, duration, time, velocity) } catch {}
       }, events)
 
-      part.loop      = true
-      part.loopStart = `${clipStart}m`
-      part.loopEnd   = `${clipStart + clipLen}m`
+      // FIX: do NOT loop individual clip parts — the transport loop handles repetition
+      part.loop = false
       clipParts.push(part)
     }
     partMap.current.set(track.id, clipParts)
@@ -652,7 +645,6 @@ export function useAudioEngine(): AudioEngine {
         if (param === 'release') sc.release = value
       }
     } else if (node?._isUtility) {
-      // Utility: apply to scGain / panner live
       const scGain = sidechainGainMap.current.get(trackId)
       const panner = pannerMap.get(trackId)
       if (param === 'gain'  && scGain) { try { scGain.volume.value = (scGain.volume.value) + value } catch {} }
